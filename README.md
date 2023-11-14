@@ -1,0 +1,1 @@
+Code to control KNF FF-12 diaphragm pumps for use in redox flow battery experiments. Code adapted from kirkpsmith's rfb-volume-balancing. This code adds a GUI, multithreading, and safe teardowns upon errors.
