@@ -60,7 +60,7 @@ class Pump(AsyncRunner,Teardown):
 
         # create the PID and level sense objects. The PID object operates on the shared state and sensed_event from the level object
         # self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
-        self.__level: LevelSensor = DummySensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
+        self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
         self.__pid: PIDRunner = PIDRunner(self.__level.state,self.__serial_interface,self.__level.sensed_event,logging_state=self.logging_state,rel_duty_directory=rel_duty_directory)
         self.__poller: SerialReader = SerialReader(self.__serial_interface)
 
