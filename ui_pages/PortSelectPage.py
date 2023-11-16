@@ -92,7 +92,7 @@ class PortSelectPage(ctk.CTkFrame):
     def __place_interface(self,*args):
         #TODO make this independent of Node Forwarder: make it place a box for each required argument in the supplied interface!
         new_interface = self.selected_interface.get()
-        if new_interface == "Node Forwarder":
+        if new_interface == "Node Forwarder"or new_interface == "Dummy Node Forwarder":
             self.interface_menu.grid(row=1,column=0,columnspan=1,sticky="nsew",padx=10,pady=10)
             self.localhost_entry.grid(row=1,column=1,columnspan=1,sticky="nsew",padx=10,pady=10)
         else:

@@ -1,7 +1,7 @@
 from serial_interface import GenericInterface, InterfaceException,SUPPORTED_INTERFACES, DEBUG_SUPPORTED_INTERFACES
 from .UIController import UIController
 from ui_root import UIRoot
-from pump_control import Pump, PumpState, ErrorState, ActiveState, ReadyState
+from pump_control import Pump, PumpState, ErrorState, ReadyState
 from .PAGE_EVENTS import PSEvents
 
 

@@ -81,7 +81,9 @@ class UIRoot(ctk.CTk):
                     tup[0](val)
                     # if the callback is set to only run once, remove it
                     if tup[1]:
-                        self.__states[sharedstate].pop(tup)
+                        self.__states[sharedstate].remove(tup)
+                        if len(self.__states[sharedstate])==0:
+                            self.__states.pop(sharedstate)
         # delete the temporary copy
         del states_dict
 
@@ -94,7 +96,9 @@ class UIRoot(ctk.CTk):
                 for tup in events_dict[event]:
                     tup[0]()
                     if tup[1]:
-                        self.__events[event].pop(tup)
+                        self.__events[event].remove(tup)
+                        if len(self.__events[event])==0:
+                            self.__events.pop(event)
                 # clear the event
                 event.clear()
         del events_dict

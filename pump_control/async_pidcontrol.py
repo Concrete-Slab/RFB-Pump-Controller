@@ -11,11 +11,10 @@ from .async_levelsensor import LevelBuffer
 from serial_interface import GenericInterface
 import asyncio
 from support_classes import Generator,SharedState
-from .PUMP_CONSTS import PID_DATA_TIMEOUT
-from typing import Tuple
+from .PUMP_CONSTS import PID_DATA_TIMEOUT, PumpNames
 
 
-Duties = Tuple[int,int]
+Duties = tuple[int,int]
 
 class PIDRunner(Generator[Duties]):
     
@@ -32,9 +31,6 @@ class PIDRunner(Generator[Duties]):
         self.__pid: PID|None = None
 
     async def _setup(self):
-        
-        #TODO make sure the buffers in the queue are the right size for the time window (perhaps in the calling function?)
-
         # if self.__LOGGING:
         #     timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
         #     self.__datafile = ('{}{}.csv').format(self.__rel_duty_directory,timestamp)
@@ -99,8 +95,8 @@ class PIDRunner(Generator[Duties]):
                     flowRateB = self.__base_duty - control
 
                 # Write the new flow rates to the serial device
-                await self.__serial_interface.write('<a,{}>'.format(flowRateA))
-                await self.__serial_interface.write('<b,{}>'.format(flowRateB))
+                await self.__serial_interface.write(GenericInterface.format_duty(PumpNames.A,flowRateA))
+                await self.__serial_interface.write(GenericInterface.format_duty(PumpNames.B,flowRateB))
 
                 # Optionally, save the new duties in the data file as a new line
                 if self.__logging:

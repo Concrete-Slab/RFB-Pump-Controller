@@ -7,8 +7,6 @@ from support_classes import TDExecutor
 
 class App(UIRoot):
 
-    names = ["a", "b", "c", "d", "e", "f"]
-
     def __init__(self,*args,debug = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.debug = debug
@@ -22,9 +20,9 @@ class App(UIRoot):
         return PortSelectPage(self,controller,*args,**kwargs)
     
     @page
-    def pump_control_page(self,pump: Pump, identifiers: list[str] = names,*args,**kwargs) -> ctk.CTkFrame:
-        controller = ControllerPageController(self, pump, identifiers)
-        return ControllerPage(self,controller,identifiers)
+    def pump_control_page(self,pump: Pump,*args,**kwargs) -> ctk.CTkFrame:
+        controller = ControllerPageController(self, pump)
+        return ControllerPage(self,controller)
 
 
 if __name__ == '__main__':

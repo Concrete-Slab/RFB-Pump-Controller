@@ -18,10 +18,6 @@ class ReadyState(PumpState):
     def __init__(self) -> None:
         pass
 
-class ActiveState(PumpState):
-    def __init__(self,speeds: dict[PumpNames, float]) -> None:
-        self.speeds = speeds
-
 class ErrorState(PumpState):
     def __init__(self,error: BaseException) -> None:
         self.error = error
@@ -70,8 +66,6 @@ class Pump(AsyncRunner,Teardown):
                 future.result()
                 # Future does not have an error: assign ready state to queue
                 self.state.set_value(ReadyState())
-                # start reading from the serial buffer
-                # self.run_async(__poll_serial(self.__serial_interface,Queue(),threading.Event()))
             except InterfaceException as e:
                 # Future completed with error: Assign error state to queue and close loop
                 self.state.set_value(ErrorState(e))
@@ -144,14 +138,16 @@ class Pump(AsyncRunner,Teardown):
         # print("setting duty to "+str(new_duty))
         if is_duty(new_duty):
             if identifier == PumpNames.A:
-                self.stop_pid()
-                stopb_str = format_duty(PumpNames.B.value,0)
-                self.run_async(self.__serial_interface.write(stopb_str))
+                if self.__pid.is_running.value:
+                    self.stop_pid()
+                    stopb_str = GenericInterface.format_duty(PumpNames.B.value,0)
+                    self.run_async(self.__serial_interface.write(stopb_str))
             elif identifier == PumpNames.B:
-                self.stop_pid()
-                stopa_str = format_duty(PumpNames.A.value,0)
-                self.run_async(self.__serial_interface.write(stopa_str))
-            writestr = format_duty(identifier.value,new_duty)
+                if self.__pid.is_running.value:
+                    self.stop_pid()
+                    stopa_str = GenericInterface.format_duty(PumpNames.A.value,0)
+                    self.run_async(self.__serial_interface.write(stopa_str))
+            writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_async(self.__serial_interface.write(writestr))
 
     def teardown(self):
@@ -164,8 +160,13 @@ class Pump(AsyncRunner,Teardown):
 
     def _async_teardowns(self) -> Iterable[Coroutine[None, None, None]]:
         lstout: list[Coroutine[None,None,None]] = []
+        async def write_without_error(pmp: PumpNames):
+                try:
+                    await self.__serial_interface.write(f"<{pump.value},0>")
+                except InterfaceException:
+                    pass
         for pump in PumpNames:
-            lstout.append(self.__serial_interface.write(f"<{pump.value},0>"))
+            lstout.append(write_without_error(pump))
         return lstout
     
     def _sync_teardown(self) -> None:
@@ -177,7 +178,6 @@ def is_duty(duty: int):
         return True
     return False
         
-def format_duty(ident: str, duty: int) -> str:
-    return f"<{ident}, {duty}"
+
 
 

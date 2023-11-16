@@ -40,6 +40,10 @@ class GenericInterface(ABC):
         for i in range(0,len(COM_ports)):
             COM_str[i] = COM_ports[i].device
         return COM_str
+    
+    @staticmethod
+    def format_duty(ident: str, duty: int) -> str:
+        return f"<{ident}, {duty}>"
 
 
 class InterfaceException(BaseException):

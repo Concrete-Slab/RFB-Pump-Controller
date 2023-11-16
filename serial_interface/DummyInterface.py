@@ -18,7 +18,7 @@ class DummyInterface(GenericInterface):
         # raise InterfaceException
         out = [""]*6
         for i in range(0,6):
-            out[i] = str(random.random()*255)
+            out[i] = str(random.random()*12300)
         outstr = ",".join(out)
         return outstr
     

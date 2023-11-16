@@ -1,6 +1,6 @@
 from .UIController import UIController
 from ui_root import UIRoot
-from pump_control import Pump,PumpNames, PumpState, ActiveState, ReadyState, ErrorState, PIDException, LevelException
+from pump_control import Pump, PumpNames, PumpState, ReadyState, ErrorState, PIDException, LevelException, ReadException
 from .CV2Warning import CV2Warning
 from .PAGE_EVENTS import CEvents, ProcessName
 from typing import Tuple
@@ -11,10 +11,9 @@ class ControllerPageController(UIController):
 
     DEFAULT_VIDEO_DEVICE = 0
 
-    def __init__(self, root: UIRoot, pump: Pump, identifiers: list[str]) -> None:
+    def __init__(self, root: UIRoot, pump: Pump) -> None:
         super().__init__(root)
         self.pump = pump
-        self.identifiers = identifiers
         self.__polling_removal_callbacks = []
         self.__pid_removal_callbacks = []
         self.__level_removal_callbacks = []
@@ -28,7 +27,7 @@ class ControllerPageController(UIController):
         # General process events
         self.add_listener(CEvents.START_PROCESS,self.__start_process)
         self.add_listener(CEvents.CLOSE_PROCESS,self.__close_process)
-        self.add_listener(CEvents.MANUAL_DUTY_SET,lambda ident, duty: self.pump.manual_set_duty(PumpNames(ident),duty))
+        self.add_listener(CEvents.MANUAL_DUTY_SET,self.pump.manual_set_duty)
 
         # PID events
 
@@ -78,9 +77,14 @@ class ControllerPageController(UIController):
         if isinstance(newstate,ErrorState):
             error = newstate.error
             if isinstance(error,InterfaceException):
-                self._nextpage("port_select_page",starting_prompt="Serial port disconnected")
-            if isinstance(error,LevelException):
-                print(error)
+                msg = str(error)
+                if msg == "" or msg[0] == "<":
+                    msg = "Serial port disconnected"
+                self._nextpage("port_select_page",starting_prompt=msg)
+            if isinstance(error,LevelException) or isinstance(error,PIDException) or isinstance(error,ReadException):
+                self.notify_event(CEvents.ERROR,error)
+        elif isinstance(newstate,ReadyState):
+            self.notify_event(CEvents.READY)
 
     # PID CALLBACKS
 
@@ -102,8 +106,8 @@ class ControllerPageController(UIController):
     def __handleduties_pid(self,newduties: Tuple[float,float]):
         dutyA = newduties[0]
         dutyB = newduties[1]
-        self.notify_event(CEvents.AUTO_DUTY_SET,PumpNames.A.value,dutyA)
-        self.notify_event(CEvents.AUTO_DUTY_SET,PumpNames.B.value,dutyB)
+        self.notify_event(CEvents.AUTO_DUTY_SET,PumpNames.A,dutyA)
+        self.notify_event(CEvents.AUTO_DUTY_SET,PumpNames.B,dutyB)
 
     def __unregister_pid(self):
         self.__close_pid()
@@ -140,7 +144,7 @@ class ControllerPageController(UIController):
 
     def __close_level(self):
         self.pump.stop_levels()
-
+        
     # SERIAL POLLING CALLBACKS
     def __start_polling(self):
         (state_running,state_speeds) = self.pump.start_polling()
@@ -161,7 +165,7 @@ class ControllerPageController(UIController):
     def __handlespeeds_poller(self,newspeeds: dict[PumpNames,float]):
         new_dict = newspeeds
         for pmp in new_dict.keys():
-            self.notify_event(CEvents.AUTO_SPEED_SET,pmp.value,new_dict[pmp])
+            self.notify_event(CEvents.AUTO_SPEED_SET,pmp,new_dict[pmp])
 
 
         

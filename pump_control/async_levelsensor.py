@@ -197,6 +197,8 @@ class LevelSensor(Generator[LevelBuffer]):
                         writer = csv.writer(f, delimiter=",")
                         writer.writerow(data)
         
+
+        
         # reading is now finished, increment reading counter and record performance time
         end_time = time.perf_counter()
         perftime = end_time-start_time # time in seconds for computer vision

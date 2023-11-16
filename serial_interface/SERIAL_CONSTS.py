@@ -1,17 +1,17 @@
-from .NodeInterface import NodeInterface
+from .NodeInterface import NodeInterface, DummyNodeInterface
 from .SerialInterface import SerialInterface
 from .GenericInterface import GenericInterface
 from .DummyInterface import DummyInterface
-from typing import Type,Dict
 
-SUPPORTED_INTERFACES: Dict[str, Type[GenericInterface]] = {
+SUPPORTED_INTERFACES: dict[str, type[GenericInterface]] = {
         "Node Forwarder": NodeInterface,
         "Direct Serial": SerialInterface
     }
 
-DEBUG_SUPPORTED_INTERFACES: Dict[str, Type[GenericInterface]] = {
+DEBUG_SUPPORTED_INTERFACES: dict[str, type[GenericInterface]] = {
         **SUPPORTED_INTERFACES,
-        "Dummy Interface": DummyInterface
+        "Dummy Interface": DummyInterface,
+        "Dummy Node Forwarder": DummyNodeInterface
 }
 
-        
+     

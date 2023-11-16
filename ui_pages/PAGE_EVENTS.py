@@ -21,7 +21,9 @@ class PSEvents(Enum):
 
 class CEvents(Enum):
     ERROR = Literal["error"]
-    """Controller has encountered an error. Callbacks to take error as argument"""
+    """Signals controller has encountered an error. Callbacks to take error as argument"""
+    READY = Literal["ready"]
+    """Signals pump is ready for user actions"""
     AUTO_DUTY_SET = Literal["auto_duty_set"]
     """Controller has set a pump duty. Callbacks to take the pump identifier and new duty as arguments"""
     AUTO_SPEED_SET = Literal["auto_speed_set"]

@@ -15,8 +15,10 @@ class InfoBox(ctk.CTkFrame):
                  max_value=None,
                  fg_color=ApplicationTheme.WHITE,
                  max_digits: int = 0,
+                 width: int = 60,
+                 height: int = 200,
                  format_fun: Formatter = lambda x: str(x)):
-        super().__init__(master=parent, fg_color=fg_color)
+        super().__init__(master=parent, fg_color=fg_color, width = width, height = height)
         self.max_value = max_value
         self.format_fun = format_fun
         self.columnconfigure([0,1],weight=1)
@@ -40,6 +42,7 @@ class InfoBox(ctk.CTkFrame):
         self._update_progress_value()
         self.progress_bar.grid(row=0, column=0, sticky="ew", pady=10, padx=10)
         self.output_text.grid(row=0,column=1,pady=20, padx=20,sticky="nsew")
+        self.pack_propagate(False)
 
     def _update_progress_value(self, *args):
         new_val = self.value_var.get()
