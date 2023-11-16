@@ -1,6 +1,6 @@
 from .UIController import UIController
 from ui_root import UIRoot
-from pump_control import Pump, PumpNames, PumpState, ReadyState, ErrorState, PIDException, LevelException, ReadException
+from pump_control import Pump, PumpNames, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
 from .CV2Warning import CV2Warning
 from .PAGE_EVENTS import CEvents, ProcessName
 from typing import Tuple
@@ -85,6 +85,9 @@ class ControllerPageController(UIController):
                 self.notify_event(CEvents.ERROR,error)
         elif isinstance(newstate,ReadyState):
             self.notify_event(CEvents.READY)
+        elif isinstance(newstate, ActiveState):
+            for pmp in newstate.auto_duties.keys():
+                self.notify_event(CEvents.AUTO_DUTY_SETs,pmp,newstate.auto_duties[pmp])
 
     # PID CALLBACKS
 

@@ -32,16 +32,16 @@ class AsyncRunner(ABC):
         # signal that the thread is ready to be joined
         self.join_event.set()
         # run the asynchronous teardown function in a new temporary loop
-        teardowns = self._async_teardowns()
-        temp_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(temp_loop)
-        try:
-            temp_loop.run_until_complete(asyncio.gather(*teardowns))
-        finally:
-            # close the temporary loop
-            temp_loop.stop()
-            temp_loop.close()
-            self._sync_teardown()
+        # teardowns = self._async_teardowns()
+        # temp_loop = asyncio.new_event_loop()
+        # asyncio.set_event_loop(temp_loop)
+        # try:
+        #     temp_loop.run_until_complete(asyncio.gather(*teardowns))
+        # finally:
+        #     # close the temporary loop
+        #     temp_loop.stop()
+        #     temp_loop.close()
+        
 
     def run_async(self, coroutine: Coroutine[Any,Any,T], callback: Callable[[Future[T]],None] | list[Callable[[Future[T]],None]] = None) -> Future[T]:
         # Returns a future:
@@ -75,11 +75,17 @@ class AsyncRunner(ABC):
 
         async def wait_for_completion():
             try:
+                
                 if self.__active_coroutines:
                     asyncio_futs: set[asyncio.Future] = set()
                     for conc_fut in self.__active_coroutines:
                         asyncio_futs.add(asyncio.wrap_future(conc_fut))
+                    # Finish all running coroutines
                     await asyncio.gather(*asyncio_futs)
+                    # Finish all teardown coroutines
+                    astd = self._async_teardowns()
+                    await asyncio.gather(*astd)
+                    self._sync_teardown()
             finally:
                 self.__loop.stop()
         
@@ -95,7 +101,7 @@ class AsyncRunner(ABC):
             self.__thread.join()
 
     @abstractmethod
-    def _async_teardowns(self) -> list[Coroutine[None,None,None]]:
+    def _async_teardowns(self) -> Iterable[Coroutine[None,None,None]]:
         """Async methods to be called once the loop has shut down. Avoids race condition from calling them before loop shuts and hoping they will be run before call_soon initiates shutdown"""
         pass
 

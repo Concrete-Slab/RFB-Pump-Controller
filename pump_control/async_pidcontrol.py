@@ -95,8 +95,8 @@ class PIDRunner(Generator[Duties]):
                     flowRateB = self.__base_duty - control
 
                 # Write the new flow rates to the serial device
-                await self.__serial_interface.write(GenericInterface.format_duty(PumpNames.A,flowRateA))
-                await self.__serial_interface.write(GenericInterface.format_duty(PumpNames.B,flowRateB))
+                await self.__serial_interface.write(GenericInterface.format_duty(PumpNames.A.value,flowRateA))
+                await self.__serial_interface.write(GenericInterface.format_duty(PumpNames.B.value,flowRateB))
 
                 # Optionally, save the new duties in the data file as a new line
                 if self.__logging:

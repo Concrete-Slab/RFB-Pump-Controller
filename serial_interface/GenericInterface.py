@@ -9,12 +9,8 @@ class GenericInterface(ABC):
         # Any additional required parameters must be keyword arguments.
         # If a required parameter is None, then one can simply raise an InterfaceException
         #TODO maybe implement this functionality in this class so it is automatic on super() call?
-
-
-        # Ensures that upon error, the exposed port(s) will close
-        # This is important with serial ports, as only one program may use them at a time
-        atexit.register(self.close)
-
+        pass
+    
     @abstractmethod
     async def establish(self):
         pass
