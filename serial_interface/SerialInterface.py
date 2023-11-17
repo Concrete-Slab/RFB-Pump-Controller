@@ -27,7 +27,7 @@ class SerialInterface(GenericInterface):
 
     def close(self):
         if self.is_established:
-            self.writer.close()
+            self.writer.transport.abort()
             self.is_established = False
 
     async def readbuffer(self) -> str:
