@@ -146,13 +146,13 @@ class Pump(AsyncRunner,Teardown):
                     self.stop_pid()
                     stopb_str = GenericInterface.format_duty(PumpNames.B.value,0)
                     self.run_async(self.__serial_interface.write(stopb_str))
-                    self.state.set_value(ActiveState({PumpNames.B,0}))
+                    self.state.set_value(ActiveState({PumpNames.B:0}))
             elif identifier == PumpNames.B:
                 if self.__pid.is_running.value:
                     self.stop_pid()
                     stopa_str = GenericInterface.format_duty(PumpNames.A.value,0)
                     self.run_async(self.__serial_interface.write(stopa_str))
-                    self.state.set_value(ActiveState({PumpNames.A,0}))
+                    self.state.set_value(ActiveState({PumpNames.A:0}))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_async(self.__serial_interface.write(writestr))
 
@@ -166,14 +166,13 @@ class Pump(AsyncRunner,Teardown):
 
     def _async_teardowns(self) -> Iterable[Coroutine[None, None, None]]:
         setout: set[Coroutine[None,None,None]] = set()
-        async def write_without_error(pmp: PumpNames):
+        for pump in PumpNames:
+            async def write_without_error(pmp: PumpNames):
                 try:
-                    await self.__serial_interface.write(f"<{pump.value},0>")
+                    await self.__serial_interface.write(f"<{pmp.value},0>")
                 except InterfaceException:
                     pass
-        for pump in PumpNames:
-            coroutine_obj = write_without_error(pump)
-            setout.add(coroutine_obj)
+            setout.add(write_without_error(pump))
         return setout
     
     def _sync_teardown(self) -> None:

@@ -87,7 +87,7 @@ class ControllerPageController(UIController):
             self.notify_event(CEvents.READY)
         elif isinstance(newstate, ActiveState):
             for pmp in newstate.auto_duties.keys():
-                self.notify_event(CEvents.AUTO_DUTY_SETs,pmp,newstate.auto_duties[pmp])
+                self.notify_event(CEvents.AUTO_DUTY_SET,pmp,newstate.auto_duties[pmp])
 
     # PID CALLBACKS
 
@@ -119,10 +119,12 @@ class ControllerPageController(UIController):
 
     # DATA LOGGING CALLBACKS
     def __start_data(self):
-        pass
+        self.pump.logging_state.set_value(True)
+        self.notify_event(CEvents.PROCESS_STARTED,ProcessName.DATA)
 
     def __close_data(self):
-        pass
+        self.pump.logging_state.set_value(False)
+        self.notify_event(CEvents.PROCESS_CLOSED,ProcessName.DATA)
     
     # LEVEL SENSING CALLBACKS
     def __start_level(self):

@@ -3,12 +3,13 @@ from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE
 from .Buffer import Buffer
 from .timeavg import TimeAvg
 import cv2
-import numpy as np
 import datetime
 import asyncio
 import csv
 import time
 from math import isnan
+from pathlib import Path
+from .datalogger import log_data
 
 #TODO change this to typing.Sequence[int] if error
 Rect = tuple[int,int,int,int]
@@ -17,14 +18,18 @@ LevelBuffer = Buffer[list[float]]
 
 class LevelSensor(Generator[LevelBuffer]):
 
+    LOG_COLUMN_HEADERS = ["Timestamp","Level 1 Avg", "Level 2 Avg","Avg Difference"]
+
     def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
+
+        self.__rel_level_directory = rel_level_directory.strip("\\").strip("/").replace("\\","/")
+        self.__LOG_PATH = Path(__file__).absolute().parent / self.__rel_level_directory
         
         self.__delta_t = LEVEL_AVERAGE_PERIOD
         self.__delta_t_short = LEVEL_AVERAGE_PERIOD_SHORT
         self.__logging_state = logging_state
         self.__logging = self.__logging_state.value
-        self.__rel_level_directory = rel_level_directory
 
         # video parameters to be set at a later time before generation
         self.__vc: cv2.VideoCapture|None = None
@@ -88,6 +93,7 @@ class LevelSensor(Generator[LevelBuffer]):
         self.__vc = cv2.VideoCapture(self.__video_device)
         self.__i: int = 0
         self.__initial_timestamp = time.time()
+        self.__logging = self.__logging_state.value
         print("levelsensor reached end of setup")
 
     async def _loop(self) -> LevelBuffer|None:
@@ -160,9 +166,7 @@ class LevelSensor(Generator[LevelBuffer]):
 
 
         # update the logging state
-        new_log_state = self.__logging_state.get_value()
-        if new_log_state is not None:
-            self.__logging = new_log_state
+        self.__logging = self.__logging_state.value
 
 
 
@@ -173,40 +177,50 @@ class LevelSensor(Generator[LevelBuffer]):
         reading_calculation_1 = self.__reading1.calculate()
         reading_calculation_2 = self.__reading2.calculate()
         if (not isnan(reading_calculation_1)) and (not isnan(reading_calculation_2)):
-            data = [elapsed_seconds, self.__reading1.calculate(), self.__reading2.calculate()]
+            data = [elapsed_seconds, reading_calculation_1, reading_calculation_2, reading_calculation_1-reading_calculation_2]
 
             self.__buffer.add(data)
             self.state.set_value(self.__buffer)
             # additional asyncio event set for pid await line
             self.sensed_event.set()
 
-
             if self.__logging:
-                
+                timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+                data_str = [timestamp] + list(map(str,data))
                 if self.__datafile is None:
-                    # create file and write the first line of data
-                    timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                    self.__datafile = ('{}{}.csv').format(self.__rel_level_directory,timestamp)
-                    with open(self.__datafile, "a", newline='') as f:
-                        writer = csv.writer(f, delimiter=",")
-                        writer.writerow(['Time (seconds elapsed)', 'Left (mL)', 'Right (mL)'])
-                        writer.writerow(data)
-                else:
-                    # write the new data onto the existing file
-                    with open(self.__datafile, "a", newline='') as f:
-                        writer = csv.writer(f, delimiter=",")
-                        writer.writerow(data)
+                    self.__datafile = timestamp
+                log_data(self.__LOG_PATH,self.__datafile,data_str,column_headers=self.LOG_COLUMN_HEADERS)
+                # if self.__datafile is None:
+
+                    
+                #     # create file and write the first line of data
+                #     timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+                #     proposal_directory = self.__SCRIPT_LOCATION / self.__rel_level_directory
+                #     if not os.path.isdir(proposal_directory.as_posix()):
+                #         os.makedirs(proposal_directory.as_posix())
+                #     filepath = proposal_directory / f"/{timestamp}.csv"
+                #     filepath = Path(__file__).absolute().parent / f"{self.__rel_level_directory}/{timestamp}.csv"
+                #     self.__datafile = filepath.as_posix()
+                #     with open(self.__datafile, "a+", newline='') as f:
+                #         writer = csv.writer(f, delimiter=",")
+                #         writer.writerow(['Time (seconds elapsed)', 'Left (mL)', 'Right (mL)'])
+                #         writer.writerow(data)
+                # else:
+                #     # write the new data onto the existing file
+                #     with open(self.__datafile, "a", newline='') as f:
+                #         writer = csv.writer(f, delimiter=",")
+                #         writer.writerow(data)
         
 
         
         # reading is now finished, increment reading counter and record performance time
         end_time = time.perf_counter()
-        perftime = end_time-start_time # time in seconds for computer vision
+        perftime = (end_time-start_time)/1000 # time in seconds for computer vision
         self.__i += 1
 
         # save data roughly every 5 seconds
         # avgperf = self.__update_perftime(perftime)
-        sleep_time = min(LEVEL_SENSE_PERIOD - perftime,0)
+        sleep_time = max(LEVEL_SENSE_PERIOD - perftime,0)
         await asyncio.sleep(sleep_time)
 
 

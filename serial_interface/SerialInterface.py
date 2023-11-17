@@ -32,15 +32,19 @@ class SerialInterface(GenericInterface):
 
     async def readbuffer(self) -> str:
         if self.is_established:
-            return (await self.reader.readline()).decode('utf-8').strip().rstrip("\n").rstrip("\r")
+            outstr = (await self.reader.readline()).decode('utf-8').strip().rstrip("\n").rstrip("\r")
+            print(outstr)
+            return outstr
         else:
             raise InterfaceException("Interface not established")
 
     async def write(self,val: str):
         if self.is_established:
+            print(f"Writing: {val}")
             try:
-                val_send = val + "\r\n"
-                await asyncio.wait_for(self.writer.write(val.encode('utf-8')),timeout=1)
+                loop = asyncio.get_running_loop()
+                writefut = loop.run_in_executor(None,lambda: self.writer.write(val.encode('utf-8')))
+                await asyncio.wait_for(writefut,timeout=1)
             except asyncio.TimeoutError:
                 raise InterfaceException("Write timeout")
         else:

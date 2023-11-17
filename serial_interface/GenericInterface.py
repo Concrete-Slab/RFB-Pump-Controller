@@ -31,11 +31,16 @@ class GenericInterface(ABC):
     def get_serial_ports(debug: bool = False):
         COM_ports = serial.tools.list_ports.comports()
         COM_str = ['']*len(COM_ports)
-        if debug:
-            COM_str = COM_str + ["Dummy port"]
+        
+        description = ['']*len(COM_str)
         for i in range(0,len(COM_ports)):
             COM_str[i] = COM_ports[i].device
-        return COM_str
+            description[i] = COM_ports[i].description
+        if debug:
+            COM_str = COM_str + ["Dummy port"]
+            description = description + [""]
+
+        return COM_str,description
     
     @staticmethod
     def format_duty(ident: str, duty: int) -> str:

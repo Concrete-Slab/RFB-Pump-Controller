@@ -50,20 +50,21 @@ class PortSelectPage(ctk.CTkFrame):
 
 
         # Place the widgets onto the screen
-        self.columnconfigure(0,weight=1,uniform="col")
-        self.columnconfigure(1,weight=1,uniform="col")
-        self.columnconfigure(2,weight=1,uniform="col")
+        self.columnconfigure([0,1,2,3],weight=1,uniform="col")
         self.status_label.grid(row=0,column=0,columnspan=3,padx=10,pady=10,sticky="nsew")
         self.__place_interface()
-        self.ports_menu.grid(row=1,column=2,padx=10,pady=10,sticky="nsew")
-        self.confirm_button.grid(row=2,column=1,padx=10,pady=10,sticky="nsew")
+        self.ports_menu.grid(row=1,column=2,columnspan=2,padx=10,pady=10,sticky="nsew")
+        self.confirm_button.grid(row=2,column=3,padx=10,pady=10,sticky="nsew")
         
-    def __update_ports(self,newPorts:list[str]):
+    def __update_ports(self,newPorts:list[str],descriptions:list[str]):
         self.ports = [PortSelectPage.DEFAULT_PORT_MESSAGE]+newPorts
+        port_text = self.ports
+        for i in range(1,len(port_text)):
+            port_text[i] = f"{self.ports[i]} - {descriptions[i-1]}"
         prevSelection = self.selected_port.get()
         if prevSelection not in self.ports:
             self.selected_port.set(value=self.ports[0])
-        self.ports_menu.configure(require_redraw=True,values=self.ports)
+        self.ports_menu.configure(require_redraw=True,values=port_text)
 
     def __update_interfaces(self,newInterfaces,requiredkwargs: dict[str,Any]):
         self.interfaces = [PortSelectPage.DEFAULT_INTERFACE_MESSAGE]+newInterfaces
@@ -74,13 +75,21 @@ class PortSelectPage(ctk.CTkFrame):
 
     def __send_config(self):
         if self.confirm_button._state != ctk.DISABLED:
-            port = self.selected_port.get()
+            def get_port_from_desc(selected_port):
+                    for port in self.ports:
+                        if port.startswith(selected_port):
+                            return selected_port
+                    return None
+            port_desc = self.selected_port.get()
+            port = get_port_from_desc(port_desc)
             interface = self.selected_interface.get()
             local_port = self.localhost_port.get()
-            if port == PortSelectPage.DEFAULT_PORT_MESSAGE or interface == PortSelectPage.DEFAULT_INTERFACE_MESSAGE or (local_port=="" and interface=="Node Forwarder"):
+            if port is None or interface == PortSelectPage.DEFAULT_INTERFACE_MESSAGE or (local_port=="" and interface=="Node Forwarder"):
+                
                 self.status.set("Please select a valid serial/local port and interface")
                 self.UIController.notify_event(PSEvents.UPDATE_PORTS)
             else:
+                
                 self.confirm_button.configure(state=ctk.DISABLED)
                 self.UIController.notify_event(PSEvents.SERIAL_CONFIG,interface,port,local_port=local_port)
 

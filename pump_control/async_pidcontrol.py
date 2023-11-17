@@ -2,7 +2,7 @@
 # coding: utf-8
 
 # Import required modules
-
+import os
 import numpy as np
 from simple_pid import PID
 import csv
@@ -12,19 +12,25 @@ from serial_interface import GenericInterface
 import asyncio
 from support_classes import Generator,SharedState
 from .PUMP_CONSTS import PID_DATA_TIMEOUT, PumpNames
-
+from pathlib import Path
+from .datalogger import log_data
 
 Duties = tuple[int,int]
 
 class PIDRunner(Generator[Duties]):
+
+    LOG_COLUMN_HEADERS = ["Timestamp", "Pump A Duty", "Pump B Duty"]
     
     def __init__(self, level_state: SharedState[LevelBuffer], serial_interface: GenericInterface, level_event: asyncio.Event, logging_state: SharedState[bool]=SharedState(False), rel_duty_directory="\\pumps\\flowrates", base_duty=92, **kwargs) -> None:
         super().__init__()
+        self.__rel_duty_directory = rel_duty_directory.strip("\\").strip("/").replace("\\","/")
+        self.__LOG_PATH = Path(__file__).absolute().parent / self.__rel_duty_directory
+        print(self.__LOG_PATH)
+        print(str(Path(__file__).absolute().parent))
         self.__input_state = level_state
         self.__serial_interface = serial_interface
         self.__logging = logging_state.value
         self.__logging_state = logging_state
-        self.__rel_duty_directory = rel_duty_directory
         self.__datafile: str|None = None
         self.__base_duty = base_duty
         self.__level_event = level_event
@@ -68,25 +74,22 @@ class PIDRunner(Generator[Duties]):
 
         # update the state of the datalogger
 
-        new_log_state = self.__logging_state.get_value()
-        if new_log_state is not None:
-            self.__logging = new_log_state
-
+        self.__logging = self.__logging_state.value
         try:
             level_buffer = self.__input_state.get_value()
             if level_buffer is not None:
                 # There is new data! Read it from the level generator queue
  
-                last_readings = level_buffer.read()
+                last_readings = np.array(level_buffer.read())
 
                 # Calculate the average of the lbuffer readings
-                error = 0 - np.mean(last_readings)
+                error = 0 - np.mean(last_readings[:,3])
                 
                 # Perform the PID control (rounded as duty is an integer)
                 control = round(self.__pid(error))
 
                 # Assign new duties
-                if (control > 0): 
+                if (control > 0):
                     flowRateA = self.__base_duty + control
                     flowRateB = self.__base_duty
                     
@@ -101,18 +104,28 @@ class PIDRunner(Generator[Duties]):
                 # Optionally, save the new duties in the data file as a new line
                 if self.__logging:
                     # print(flowRateA, flowRateB)
-                    data = [datetime.datetime.now().strftime("%m-%d-%Y %H:%M:%S"), flowRateA, flowRateB]
+                    timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+                    data = [timestamp, flowRateA, flowRateB]
                     if self.__datafile is None:
-                        timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                        self.__datafile = ('{}{}.csv').format(self.__rel_duty_directory,timestamp)
-                        with open(self.__datafile, "a", newline='') as f:
-                            writer = csv.writer(f, delimiter=",")
-                            writer.writerow(['Time (seconds since epoch)', 'Flow Rate A','Flow Rate B'])
-                            writer.writerow(data)
-                    else:
-                        with open(self.__datafile, "a", newline='') as f:
-                            writer = csv.writer(f, delimiter=",")
-                            writer.writerow(data)
+                        self.__datafile = timestamp
+                    log_data(self.__LOG_PATH.as_posix(),self.__datafile,data,column_headers=self.LOG_COLUMN_HEADERS)
+
+                    
+                    # if self.__datafile is None:
+                    #     timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+                    #     proposal_directory = self.__SCRIPT_LOCATION / self.__rel_duty_directory
+                    #     if not os.path.isdir(proposal_directory.as_posix()):
+                    #         os.makedirs(proposal_directory.as_posix())
+                    #     filepath = proposal_directory / f"/{timestamp}.csv"
+                    #     self.__datafile = filepath.as_posix()
+                    #     with open(self.__datafile, "a+", newline='') as f:
+                    #         writer = csv.writer(f, delimiter=",")
+                    #         writer.writerow(['Time (seconds since epoch)', 'Flow Rate A','Flow Rate B'])
+                    #         writer.writerow(data)
+                    # else:
+                    #     with open(self.__datafile, "a", newline='') as f:
+                    #         writer = csv.writer(f, delimiter=",")
+                    #         writer.writerow(data)
                 
                 return (flowRateA,flowRateB)
         except IOError as e:

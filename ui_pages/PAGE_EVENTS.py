@@ -4,7 +4,7 @@ from typing import Literal
 
 class PSEvents(Enum):
     NEW_PORTS = Literal["new_ports"]
-    """Signals that the controller has found new serial ports. Callbacks to take list of new ports as argument"""
+    """Signals that the controller has found new serial ports. Callbacks to take list of new ports and their descriptions as argument"""
     NEW_INTERFACES = Literal["new_interfaces"]
     """Signals that the controller has found new interfaces. Callbacks to take list of new interfaces as argument"""
     ERROR = Literal["error"]
@@ -15,6 +15,7 @@ class PSEvents(Enum):
     """Signals that the UI has requested new serial ports"""
     SERIAL_CONFIG = Literal["serial_config"]
     """Signals the choice of interface and port. Callbacks to take interface, port and any other *args and **kwargs as arguments"""
+    
     REMOVE_ROOT_CALLBACKS = Literal["remove_root_callbacks"]
     """Signals to remove all event and state callbacks from the root polling loop"""
 

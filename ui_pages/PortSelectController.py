@@ -21,10 +21,10 @@ class PortSelectController(UIController):
         self.add_listener(PSEvents.UPDATE_INTERFACES,self.__update_interface_list)
 
     def __update_serial_list(self):
-        new_list = GenericInterface.get_serial_ports(self.debug)
+        new_list,descriptions = GenericInterface.get_serial_ports(self.debug)
         if sorted(new_list)!=sorted(self.__current_ports):
             self.__current_ports = new_list
-            self.notify_event(PSEvents.NEW_PORTS,new_list)
+            self.notify_event(PSEvents.NEW_PORTS,new_list,descriptions)
 
     def __update_interface_list(self):
         self.notify_event(PSEvents.NEW_INTERFACES,list(self.__supported_interfaces.keys()),None)
@@ -35,7 +35,7 @@ class PortSelectController(UIController):
             #TODO this is blocking, but it is probably alright in this case?
             # asyncio.run(interface.establish())
             pump = Pump(interface)
-            remove_event_callback = self._add_event(pump.join_event,pump.stop_event_loop)
+            remove_event_callback = self._add_event(pump.join_event,pump.stop_event_loop,single_call=True)
 
             def __on_response(state: PumpState):
                 if isinstance(state,ReadyState):
