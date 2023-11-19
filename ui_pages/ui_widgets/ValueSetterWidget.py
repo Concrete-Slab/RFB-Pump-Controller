@@ -10,8 +10,10 @@ class ValueSetterWidget(ctk.CTkFrame):
                  parent,
                  value_var: ctk.DoubleVar,
                  value_callback: Callable[[float],None]|None = None,
-                 validation_fun: Callable[[str], bool]|None = None):
-        super().__init__(parent, fg_color=ApplicationTheme.WHITE)
+                 validation_fun: Callable[[str], bool]|None = None,
+                 width = 300,
+                 height = 60):
+        super().__init__(parent, fg_color=ApplicationTheme.WHITE,width=width,height=height)
 
         if validation_fun is None:
             validation_fun = ValueSetterWidget.default_validator

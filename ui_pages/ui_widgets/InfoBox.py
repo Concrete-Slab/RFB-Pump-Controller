@@ -15,8 +15,8 @@ class InfoBox(ctk.CTkFrame):
                  max_value=None,
                  fg_color=ApplicationTheme.WHITE,
                  max_digits: int = 0,
-                 width: int = 60,
-                 height: int = 200,
+                 width: int = 300,
+                 height: int = 60,
                  format_fun: Formatter = lambda x: str(x)):
         super().__init__(master=parent, fg_color=fg_color, width = width, height = height)
         self.max_value = max_value
@@ -26,7 +26,7 @@ class InfoBox(ctk.CTkFrame):
 
         self.progress_bar = ctk.CTkProgressBar(self,
                                                progress_color=ApplicationTheme.GREEN,
-                                               fg_color=ApplicationTheme.LIGHT_GRAY,
+                                               fg_color=ApplicationTheme.LIGHT_GRAY
                                                )
         self.value_var = value_var
         self.text_var = ctk.StringVar(value=format_fun(self.value_var.get()))
@@ -40,8 +40,8 @@ class InfoBox(ctk.CTkFrame):
                                         )
         
         self._update_progress_value()
-        self.progress_bar.grid(row=0, column=0, sticky="ew", pady=10, padx=10)
-        self.output_text.grid(row=0,column=1,pady=20, padx=20,sticky="nsew")
+        self.output_text.pack(side=ctk.RIGHT,padx=10,pady=10,fill=ctk.BOTH,anchor=ctk.E)
+        self.progress_bar.pack(side=ctk.LEFT,padx=10,pady=10,fill=ctk.X,expand=True)
         self.pack_propagate(False)
 
     def _update_progress_value(self, *args):

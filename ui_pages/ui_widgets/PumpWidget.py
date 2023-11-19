@@ -7,7 +7,7 @@ from typing import Callable
 
 class PumpWidget(ctk.CTkFrame):
 
-    def __init__(self, parent, identifier: str, duty_callback: Callable[[int],None]|None = None):
+    def __init__(self, parent, identifier: str, duty_callback: Callable[[int],None]|None = None, widget_width = 300, widget_height = 60):
         super().__init__(parent,)
         self._pumpName = identifier
 
@@ -24,11 +24,11 @@ class PumpWidget(ctk.CTkFrame):
         self.pump_label.grid(row=1,column=0,padx=10,pady=10,sticky="")
 
         self.speedVar = ctk.DoubleVar(value=0)
-        self._speedWidget = InfoBox(self, self.speedVar,max_value=12300, width = 250,format_fun=format_speed)
+        self._speedWidget = InfoBox(self, self.speedVar,max_value=12300, width = widget_width, height= widget_height, format_fun=format_speed)
         self._speedWidget.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
 
         self.dutyVar = ctk.DoubleVar(value=0)
-        self._dutyWidget = InfoBox(self, self.dutyVar, max_value=255, width = 250, max_digits=3)
+        self._dutyWidget = InfoBox(self, self.dutyVar, max_value=255, width = widget_width, height=widget_height, max_digits=3)
         self._dutyWidget.grid(row=1, column=2, sticky="nsew", padx=10, pady=10)
 
         self._dutySetter = ValueSetterWidget(self, self.dutyVar, value_callback = lambda flt: duty_callback(int(flt)))
