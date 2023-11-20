@@ -8,10 +8,13 @@ from support_classes import open_video_device,open_cv2_window
 
 class CV2Warning(ctk.CTkToplevel):
 
+    ALERT_TITLE = "Level sensing prompt"
+
     #TODO this code is perhaps rather rushed...
 
     def __init__(self, master: ctk.CTk, controller: UIController, default_video_device: int = 0,*args, fg_color: str | Tuple[str, str] | None = None, **kwargs):
         super().__init__(master,*args, fg_color=fg_color, **kwargs)
+        self.title(self.ALERT_TITLE)
         self.UIcontroller = controller
         self.default_device = default_video_device
 

@@ -5,13 +5,18 @@ from pump_control import Pump, PumpNames
 from support_classes import TDExecutor
 
 
+
 class App(UIRoot):
 
-    def __init__(self,*args,debug = False, **kwargs):
+    APP_NAME = "RFB Pump Controller"
+
+    def __init__(self,*args, debug = False, **kwargs):
         super().__init__(*args, **kwargs)
         self.debug = debug
+        self.title(self.APP_NAME)
         self.add_page("port_select_page",self.port_select_page)
         self.add_page("pump_control_page",self.pump_control_page)
+        
         self.switch_page("port_select_page")
 
     @page
