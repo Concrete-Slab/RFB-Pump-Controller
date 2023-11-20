@@ -27,7 +27,8 @@ class SerialInterface(GenericInterface):
 
     def close(self):
         if self.is_established:
-            self.writer.transport.abort()
+            transport: serial_asyncio.SerialTransport = self.writer.transport
+            transport.abort()
             self.is_established = False
 
     async def readbuffer(self) -> str:
@@ -40,13 +41,13 @@ class SerialInterface(GenericInterface):
 
     async def write(self,val: str):
         if self.is_established:
-            print(f"Writing: {val}")
             try:
                 loop = asyncio.get_running_loop()
                 writefut = loop.run_in_executor(None,lambda: self.writer.write(val.encode('utf-8')))
                 await asyncio.wait_for(writefut,timeout=1)
             except asyncio.TimeoutError:
                 raise InterfaceException("Write timeout")
+            print(f"Writing: {val}")
         else:
             raise InterfaceException("Interface not established")
         
