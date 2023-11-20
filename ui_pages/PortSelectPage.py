@@ -2,7 +2,7 @@ import customtkinter as ctk
 from typing import Any
 from .UIController import UIController
 from .PAGE_EVENTS import PSEvents
-
+import copy
 
 class PortSelectPage(ctk.CTkFrame):
     BOX_WIDTH = 300
@@ -51,14 +51,14 @@ class PortSelectPage(ctk.CTkFrame):
 
         # Place the widgets onto the screen
         self.columnconfigure([0,1,2,3],weight=1,uniform="col")
-        self.status_label.grid(row=0,column=0,columnspan=3,padx=10,pady=10,sticky="nsew")
+        self.status_label.grid(row=0,column=0,columnspan=4,padx=10,pady=10,sticky="nsew")
         self.__place_interface()
         self.ports_menu.grid(row=1,column=2,columnspan=2,padx=10,pady=10,sticky="nsew")
         self.confirm_button.grid(row=2,column=3,padx=10,pady=10,sticky="nsew")
         
     def __update_ports(self,newPorts:list[str],descriptions:list[str]):
         self.ports = [PortSelectPage.DEFAULT_PORT_MESSAGE]+newPorts
-        port_text = self.ports
+        port_text = copy.copy(self.ports)
         for i in range(1,len(port_text)):
             port_text[i] = f"{self.ports[i]} - {descriptions[i-1]}"
         prevSelection = self.selected_port.get()
@@ -75,10 +75,10 @@ class PortSelectPage(ctk.CTkFrame):
 
     def __send_config(self):
         if self.confirm_button._state != ctk.DISABLED:
-            def get_port_from_desc(selected_port):
+            def get_port_from_desc(selected_port: str):
                     for port in self.ports:
-                        if port.startswith(selected_port):
-                            return selected_port
+                        if selected_port.startswith(port):
+                            return port
                     return None
             port_desc = self.selected_port.get()
             port = get_port_from_desc(port_desc)

@@ -15,9 +15,6 @@ class PSEvents(Enum):
     """Signals that the UI has requested new serial ports"""
     SERIAL_CONFIG = Literal["serial_config"]
     """Signals the choice of interface and port. Callbacks to take interface, port and any other *args and **kwargs as arguments"""
-    
-    REMOVE_ROOT_CALLBACKS = Literal["remove_root_callbacks"]
-    """Signals to remove all event and state callbacks from the root polling loop"""
 
 
 class CEvents(Enum):
@@ -41,6 +38,7 @@ class CEvents(Enum):
     """Signals for a specified process to close. Callbacks to take ProcessName as an argument"""
     LEVEL_DATA_ACQUIRED = Literal["level_data_acquired"]
     """Signals that the required parameters for the level sensor have been acquired. Callbacks to take device_number, r1, r2, h, ref_vol, and init_vol as arguments"""
+    
     
 
 class ProcessName(Enum):
