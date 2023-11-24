@@ -1,5 +1,5 @@
 from support_classes import Generator, SharedState, GeneratorException
-from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, LEVEL_AVERAGE_PERIOD_SHORT, CV2_KERNEL
+from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, LEVEL_AVERAGE_PERIOD_SHORT, CV2_KERNEL, LEVEL_STABILISATION_PERIOD
 from .Buffer import Buffer
 from .timeavg import TimeAvg
 import cv2
@@ -157,6 +157,9 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         reading_calculation_1 = self.__reading1.calculate()
         reading_calculation_2 = self.__reading2.calculate()
 
+        # set the initial volume to the current volume while still in stabilisation period
+        if self.__i*LEVEL_SENSE_PERIOD<LEVEL_STABILISATION_PERIOD:
+            self.__vol_init = reading_calculation_1 + reading_calculation_2
 
         thr1 = cv2.cvtColor(thr1, cv2.COLOR_GRAY2RGB)
         thr1[np.where((thr1 == [0,0,0]).all(axis = 2))] = [0,33,166]

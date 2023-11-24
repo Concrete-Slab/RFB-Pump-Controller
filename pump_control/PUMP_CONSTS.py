@@ -13,6 +13,8 @@ LEVEL_AVERAGE_PERIOD = 60.0
 """Seconds over which consecutive readings are averaged"""
 LEVEL_AVERAGE_PERIOD_SHORT = 30.0
 """Shorter period used for calibration"""
+LEVEL_STABILISATION_PERIOD = 120.0
+"""Period over which the initial volume calculation is stabilised"""
 CV2_KERNEL = np.ones([27,27],np.uint8)
 """kernel size for image processing operators"""
 REFILL_LOSS_TRIGGER = 0.1
