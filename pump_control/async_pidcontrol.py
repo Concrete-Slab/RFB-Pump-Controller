@@ -5,15 +5,15 @@ from .async_levelsensor import LevelBuffer
 from serial_interface import GenericInterface
 import asyncio
 from support_classes import Generator,SharedState
-from .PUMP_CONSTS import PID_DATA_TIMEOUT, PumpNames, PID_PUMPS
+from .PUMP_CONSTS import PID_DATA_TIMEOUT, PumpNames, PID_PUMPS, REFILL_LOSS_TRIGGER, REFILL_DUTY
 from pathlib import Path
 from .datalogger import log_data
 
-Duties = tuple[int,int]
+Duties = tuple[int,int,int]
 
 class PIDRunner(Generator[Duties]):
 
-    LOG_COLUMN_HEADERS = ["Timestamp", "Anolyte Pump Duty", "Catholyte Pump Duty"]
+    LOG_COLUMN_HEADERS = ["Timestamp", "Anolyte Pump Duty", "Catholyte Pump Duty", "Refill Pump Duty"]
     
     def __init__(self, level_state: SharedState[tuple[LevelBuffer,np.ndarray|None]], serial_interface: GenericInterface, level_event: asyncio.Event, logging_state: SharedState[bool]=SharedState(False), rel_duty_directory="\\pumps\\flowrates", base_duty=92, **kwargs) -> None:
         super().__init__()
@@ -29,6 +29,7 @@ class PIDRunner(Generator[Duties]):
         self.__base_duty = base_duty
         self.__level_event = level_event
         self.__pid: PID|None = None
+        self.__is_refilling = False
 
     async def _setup(self):
 
@@ -72,6 +73,9 @@ class PIDRunner(Generator[Duties]):
                 # Calculate the average of the buffer readings
                 # negative if reading 1 greater than reading 2
                 error = 0 - np.mean(last_readings[:,3])
+
+                volume_change = np.mean(last_readings[:,4])
+                init_volume = np.mean(last_readings[:,1]) + np.mean(last_readings[:,2]) - volume_change
                 
                 # Perform the PID control (rounded as duty is an integer)
                 control = round(self.__pid(error))
@@ -85,6 +89,16 @@ class PIDRunner(Generator[Duties]):
                     flowRateAn = self.__base_duty
                     flowRateCath = self.__base_duty - control
 
+
+                if (PID_PUMPS["refill"] is not None) and (init_volume>0):
+                    if (not self.__is_refilling) and (volume_change<0) and (abs(volume_change/init_volume)>REFILL_LOSS_TRIGGER):
+                        self.__is_refilling = True
+                        await self.__serial_interface.write(GenericInterface.format_duty(PID_PUMPS["refill"].value,REFILL_DUTY))
+                    elif self.__is_refilling and ((volume_change>0) or (abs(volume_change/init_volume)<REFILL_LOSS_TRIGGER/10)):
+                        await self.__serial_interface.write(GenericInterface.format_duty(PID_PUMPS["refill"].value,0))
+                        self.__is_refilling = False
+                
+                flowRateRefill = REFILL_DUTY if self.__is_refilling else 0
                 # Write the new flow rates to the serial device
                 await self.__serial_interface.write(GenericInterface.format_duty(PID_PUMPS["anolyte"].value,flowRateAn))
                 await self.__serial_interface.write(GenericInterface.format_duty(PID_PUMPS["catholyte"].value,flowRateCath))
@@ -93,12 +107,12 @@ class PIDRunner(Generator[Duties]):
                 if self.__logging:
                     # print(flowRateA, flowRateB)
                     timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                    data = [timestamp, flowRateAn, flowRateCath]
+                    data = [timestamp, flowRateAn, flowRateCath,flowRateRefill]
                     if self.__datafile is None:
                         self.__datafile = timestamp
                     log_data(self.__LOG_PATH.as_posix(),self.__datafile,data,column_headers=self.LOG_COLUMN_HEADERS)
                 
-                return (flowRateAn,flowRateCath)
+                return (flowRateAn,flowRateCath,flowRateRefill)
         except IOError as e:
             print("Error saving flowrates to file")
             print(e)

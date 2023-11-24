@@ -21,7 +21,7 @@ LevelBuffer = Buffer[list[float]]
 
 class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
-    LOG_COLUMN_HEADERS = ["Timestamp","Anolyte Level Avg", "Catholyte Avg","Avg Difference"]
+    LOG_COLUMN_HEADERS = ["Timestamp","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
 
     def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
@@ -91,7 +91,6 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         self.__rect2 = (int(self.__rect2[0]), int(self.__height_max), int(self.__rect2[2]), int(self.__height_min))
         self.__r1_area = self.__rect1[2] * self.__rect1[3]
         self.__r2_area = self.__rect2[2] * self.__rect2[3]
-
 
         self.__vc = cv2.VideoCapture(self.__video_device)
         self.__i: int = 0
@@ -196,7 +195,7 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
         # save reading
         if (not isnan(reading_calculation_1)) and (not isnan(reading_calculation_2)):
-            data = [elapsed_seconds, reading_calculation_1, reading_calculation_2, reading_calculation_1-reading_calculation_2]
+            data = [elapsed_seconds, reading_calculation_1, reading_calculation_2, reading_calculation_1-reading_calculation_2,reading_calculation_1+reading_calculation_2-self.__vol_init]
 
             self.__buffer.add(data)
             self.state.set_value((self.__buffer,frame))

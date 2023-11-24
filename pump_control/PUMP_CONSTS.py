@@ -15,6 +15,10 @@ LEVEL_AVERAGE_PERIOD_SHORT = 30.0
 """Shorter period used for calibration"""
 CV2_KERNEL = np.ones([27,27],np.uint8)
 """kernel size for image processing operators"""
+REFILL_LOSS_TRIGGER = 0.1
+"""Percent loss of solvent that will trigger the refill system"""
+REFILL_DUTY = 50
+"""Duty applied to the refill pump when PID controller detects low levels"""
 
 class PumpNames(Enum):
     A = "a"

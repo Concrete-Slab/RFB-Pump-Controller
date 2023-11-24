@@ -1,6 +1,6 @@
 from .UIController import UIController
 from ui_root import UIRoot
-from pump_control import Pump, PumpNames, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
+from pump_control import Pump, PumpNames, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException, PID_PUMPS
 from .CV2Warning import CV2Warning
 from .PAGE_EVENTS import CEvents, ProcessName
 from typing import Tuple
@@ -106,11 +106,13 @@ class ControllerPageController(UIController):
         else:
             self.notify_event(CEvents.PROCESS_CLOSED,ProcessName.PID)
 
-    def __handleduties_pid(self,newduties: Tuple[float,float]):
-        dutyA = newduties[0]
-        dutyB = newduties[1]
-        self.notify_event(CEvents.AUTO_DUTY_SET,PumpNames.A,dutyA)
-        self.notify_event(CEvents.AUTO_DUTY_SET,PumpNames.B,dutyB)
+    def __handleduties_pid(self,newduties: tuple[int,int,int]):
+        dutyAnolyte = newduties[0]
+        dutyCatholyte = newduties[1]
+        dutyRefill = newduties[2]
+        self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["anolyte"],dutyAnolyte)
+        self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["catholyte"],dutyCatholyte)
+        self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["refill"],dutyRefill)
 
     def __unregister_pid(self):
         self.__close_pid()
