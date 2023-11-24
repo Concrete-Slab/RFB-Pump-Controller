@@ -104,8 +104,6 @@ class UIRoot(ctk.CTk):
         del events_dict
         self.after(POLL_REFRESH_TIME_MS,self.__poll)
 
-
-
     def add_page(self,key: str,fun: PageFunction):
         if key not in self.__pages.keys():
             self.__pages = {**self.__pages,
@@ -129,6 +127,3 @@ class UIRoot(ctk.CTk):
 class UIError(KeyError):
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
-
-
-

@@ -5,20 +5,23 @@ from .timeavg import TimeAvg
 import cv2
 import datetime
 import asyncio
-import csv
 import time
 from math import isnan
 from pathlib import Path
 from .datalogger import log_data
+import numpy as np
+from typing import Any
+
+
 
 #TODO change this to typing.Sequence[int] if error
 Rect = tuple[int,int,int,int]
 
 LevelBuffer = Buffer[list[float]]
 
-class LevelSensor(Generator[LevelBuffer]):
+class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
-    LOG_COLUMN_HEADERS = ["Timestamp","Level 1 Avg", "Level 2 Avg","Avg Difference"]
+    LOG_COLUMN_HEADERS = ["Timestamp","Anolyte Level Avg", "Catholyte Avg","Avg Difference"]
 
     def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
@@ -50,7 +53,7 @@ class LevelSensor(Generator[LevelBuffer]):
         buffer_size = int(BUFFER_WINDOW_LENGTH/LEVEL_SENSE_PERIOD)
         self.__buffer = LevelBuffer(buffer_size)
         # secretly set the buffer to the correct size
-        self.state.value = self.__buffer
+        self.state.value = (self.__buffer, None)
 
         self.__kernel = CV2_KERNEL
 
@@ -94,9 +97,12 @@ class LevelSensor(Generator[LevelBuffer]):
         self.__i: int = 0
         self.__initial_timestamp = time.time()
         self.__logging = self.__logging_state.value
+        self.__sleep_time = 1
         print("levelsensor reached end of setup")
 
     async def _loop(self) -> LevelBuffer|None:
+
+        await asyncio.sleep(self.__sleep_time)
 
         # begin performance benchmarking
         start_time = time.perf_counter()
@@ -149,38 +155,51 @@ class LevelSensor(Generator[LevelBuffer]):
 
         self.__reading1.append([calc1, t])
         self.__reading2.append([calc2, t])
-        # thr1 = cv2.cvtColor(thr1, cv2.COLOR_GRAY2RGB)
-        # thr1[np.where((thr1 == [0,0,0]).all(axis = 2))] = [0,33,166]
-        # thr2 = cv2.cvtColor(thr2, cv2.COLOR_GRAY2RGB)
-        # thr2[np.where((thr2 == [0,0,0]).all(axis = 2))] = [0,33,166]
-
-        # frame[self.__height_max:int(self.__height_max + self.__height_min),
-        #     int(self.__rect1[0]):int(self.__rect1[0] + self.__rect1[2])] = thr1
-
-        # frame[self.__height_max:int(self.__height_max + self.__height_min),
-        #     int(self.__rect2[0]):int(self.__rect2[0] + self.__rect2[2])] = thr2
-        # frame = frame
+        reading_calculation_1 = self.__reading1.calculate()
+        reading_calculation_2 = self.__reading2.calculate()
 
 
+        thr1 = cv2.cvtColor(thr1, cv2.COLOR_GRAY2RGB)
+        thr1[np.where((thr1 == [0,0,0]).all(axis = 2))] = [0,33,166]
+        thr2 = cv2.cvtColor(thr2, cv2.COLOR_GRAY2RGB)
+        thr2[np.where((thr2 == [0,0,0]).all(axis = 2))] = [0,33,166]
 
+        frame[self.__height_max:int(self.__height_max + self.__height_min),
+            int(self.__rect1[0]):int(self.__rect1[0] + self.__rect1[2])] = thr1
 
+        frame[self.__height_max:int(self.__height_max + self.__height_min),
+            int(self.__rect2[0]):int(self.__rect2[0] + self.__rect2[2])] = thr2
+        frame = frame
+        cv2.line(frame,(self.__rect1[0] + self.__rect1[2],self.__height_max),(self.__rect2[0],self.__height_max),(255,0,0),2)
+        cv2.line(frame,(self.__rect1[0] + self.__rect1[2],self.__height_max + self.__height_min),(self.__rect2[0],self.__height_max + self.__height_min),(255,0,0),2)
+
+        cv2.putText(frame, 'Electrolyte Loss (mL):{: 3.3f}'.format(self.__vol_init - reading_calculation_1-reading_calculation_2), (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    1, (255, 0, 0), 2, cv2.LINE_AA)
+        pass
+        # frame = [np.uint8(x) for x in frame]
+        pass
+        print(frame.__class__.__name__)
+        cv2.imshow("levelfeed",frame)
+        cv2.waitKey(30)
 
         # update the logging state
         self.__logging = self.__logging_state.value
 
-
-
-        
-
         # save the data to the internal buffer and the exposed state
         elapsed_seconds = t - self.__initial_timestamp
-        reading_calculation_1 = self.__reading1.calculate()
-        reading_calculation_2 = self.__reading2.calculate()
+        # reading is now finished, increment reading counter and record performance time
+        end_time = time.perf_counter()
+        perftime = (end_time-start_time)/1000 # time in seconds for computer vision
+        self.__i += 1
+        self.__sleep_time = max(LEVEL_SENSE_PERIOD - perftime,0)
+        print(self.__sleep_time)
+
+        # save reading
         if (not isnan(reading_calculation_1)) and (not isnan(reading_calculation_2)):
             data = [elapsed_seconds, reading_calculation_1, reading_calculation_2, reading_calculation_1-reading_calculation_2]
 
             self.__buffer.add(data)
-            self.state.set_value(self.__buffer)
+            self.state.set_value((self.__buffer,frame))
             # additional asyncio event set for pid await line
             self.sensed_event.set()
 
@@ -190,38 +209,8 @@ class LevelSensor(Generator[LevelBuffer]):
                 if self.__datafile is None:
                     self.__datafile = timestamp
                 log_data(self.__LOG_PATH,self.__datafile,data_str,column_headers=self.LOG_COLUMN_HEADERS)
-                # if self.__datafile is None:
-
-                    
-                #     # create file and write the first line of data
-                #     timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                #     proposal_directory = self.__SCRIPT_LOCATION / self.__rel_level_directory
-                #     if not os.path.isdir(proposal_directory.as_posix()):
-                #         os.makedirs(proposal_directory.as_posix())
-                #     filepath = proposal_directory / f"/{timestamp}.csv"
-                #     filepath = Path(__file__).absolute().parent / f"{self.__rel_level_directory}/{timestamp}.csv"
-                #     self.__datafile = filepath.as_posix()
-                #     with open(self.__datafile, "a+", newline='') as f:
-                #         writer = csv.writer(f, delimiter=",")
-                #         writer.writerow(['Time (seconds elapsed)', 'Left (mL)', 'Right (mL)'])
-                #         writer.writerow(data)
-                # else:
-                #     # write the new data onto the existing file
-                #     with open(self.__datafile, "a", newline='') as f:
-                #         writer = csv.writer(f, delimiter=",")
-                #         writer.writerow(data)
         
-
         
-        # reading is now finished, increment reading counter and record performance time
-        end_time = time.perf_counter()
-        perftime = (end_time-start_time)/1000 # time in seconds for computer vision
-        self.__i += 1
-
-        # save data roughly every 5 seconds
-        # avgperf = self.__update_perftime(perftime)
-        sleep_time = max(LEVEL_SENSE_PERIOD - perftime,0)
-        await asyncio.sleep(sleep_time)
 
 
     def __update_perftime(self,newperftime) -> float:
@@ -237,7 +226,7 @@ class LevelSensor(Generator[LevelBuffer]):
 
     
 
-class DummySensor(Generator[LevelBuffer]):
+class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
     def __init__(self,sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
@@ -245,7 +234,7 @@ class DummySensor(Generator[LevelBuffer]):
         buffer_size = int(BUFFER_WINDOW_LENGTH/LEVEL_SENSE_PERIOD)
         self.__buffer = LevelBuffer(buffer_size)
         # secretly set the buffer to the correct size
-        self.state.value = self.__buffer
+        self.state.value = (self.__buffer,None)
         self.__logging_state = logging_state
         self.sensed_event = sensed_event
         self.f = None
@@ -263,7 +252,7 @@ class DummySensor(Generator[LevelBuffer]):
         await asyncio.sleep(5)
         nextdiff = float(self.f.readline().rstrip("\n").split(",")[3])
         self.__buffer.add(nextdiff)
-        self.state.set_value(self.__buffer)
+        self.state.set_value((self.__buffer,None))
         self.sensed_event.set()
 
     def teardown(self):

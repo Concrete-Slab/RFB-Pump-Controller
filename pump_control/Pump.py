@@ -7,7 +7,7 @@ from concurrent.futures import Future
 from .async_levelsensor import LevelSensor, LevelBuffer, Rect, DummySensor
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
-from .PUMP_CONSTS import PumpNames
+from .PUMP_CONSTS import PumpNames, PID_PUMPS
 from abc import ABC
 
 
@@ -52,7 +52,6 @@ class Pump(AsyncRunner,Teardown):
         super().__init__()
 
         self.__serial_interface = serial_interface
-        self.__read_event = threading.Event()
 
         self.state: SharedState[PumpState] = SharedState[PumpState]()
 
@@ -141,18 +140,18 @@ class Pump(AsyncRunner,Teardown):
     def manual_set_duty(self,identifier: PumpNames, new_duty: int):
         # print("setting duty to "+str(new_duty))
         if is_duty(new_duty):
-            if identifier == PumpNames.A:
+            if identifier == PID_PUMPS["anolyte"]:
                 if self.__pid.is_running.value:
                     self.stop_pid()
-                    stopb_str = GenericInterface.format_duty(PumpNames.B.value,0)
+                    stopb_str = GenericInterface.format_duty(PID_PUMPS["catholyte"].value,0)
                     self.run_async(self.__serial_interface.write(stopb_str))
-                    self.state.set_value(ActiveState({PumpNames.B:0}))
-            elif identifier == PumpNames.B:
+                    self.state.set_value(ActiveState({PID_PUMPS["catholyte"]:0}))
+            elif identifier == PID_PUMPS["catholyte"]:
                 if self.__pid.is_running.value:
                     self.stop_pid()
-                    stopa_str = GenericInterface.format_duty(PumpNames.A.value,0)
-                    self.run_async(self.__serial_interface.write(stopa_str))
-                    self.state.set_value(ActiveState({PumpNames.A:0}))
+                    stopcath_str = GenericInterface.format_duty(PID_PUMPS["anolyte"].value,0)
+                    self.run_async(self.__serial_interface.write(stopcath_str))
+                    self.state.set_value(ActiveState({PID_PUMPS["anolyte"]:0}))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_async(self.__serial_interface.write(writestr))
 
