@@ -14,7 +14,7 @@ class DummyInterface(GenericInterface):
         # raise InterfaceException("HAHAHAHAHAHAHA")
 
     async def readbuffer(self) -> str:
-        await asyncio.sleep(4)
+        await asyncio.sleep(1)
         # raise InterfaceException
         out = [""]*6
         for i in range(0,6):

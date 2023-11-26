@@ -168,7 +168,7 @@ class Pump(AsyncRunner,Teardown):
         for pump in PumpNames:
             async def write_without_error(pmp: PumpNames):
                 try:
-                    await self.__serial_interface.write(f"<{pmp.value},0>")
+                    await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
                 except InterfaceException:
                     pass
             setout.add(write_without_error(pump))

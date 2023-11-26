@@ -44,7 +44,7 @@ class GenericInterface(ABC):
     
     @staticmethod
     def format_duty(ident: str, duty: int) -> str:
-        return f"<{ident}, {duty}>"
+        return f"<{ident},{duty}>\n"
 
 
 class InterfaceException(BaseException):

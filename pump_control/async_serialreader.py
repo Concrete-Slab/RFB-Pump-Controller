@@ -4,7 +4,7 @@ from .PUMP_CONSTS import PumpNames
 import asyncio
 
 SpeedReading = dict[PumpNames,float]
-class SerialReader(Generator[SpeedReading]):
+class SerialReader(Generator[SpeedReading|None]):
 
     def __init__(self,serial_interface: GenericInterface) -> None:
         super().__init__()
@@ -17,12 +17,12 @@ class SerialReader(Generator[SpeedReading]):
         try:
             await asyncio.sleep(1)
             # allows a timeout on buffer reading to be set
-            new_line = await asyncio.wait_for(self.__serial_interface.readbuffer(),10)
+            new_line = await asyncio.wait_for(self.__serial_interface.readbuffer(),4)
             new_speeds = list(map(float,new_line.split(",")))
             new_dict: SpeedReading = dict(zip(PumpNames,new_speeds))
             return new_dict
-        except TimeoutError:
-            pass
+        except (TimeoutError,ValueError):
+            return None
         except InterfaceException:
             raise
 
