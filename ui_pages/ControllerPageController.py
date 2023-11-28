@@ -112,7 +112,8 @@ class ControllerPageController(UIController):
         dutyRefill = newduties[2]
         self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["anolyte"],dutyAnolyte)
         self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["catholyte"],dutyCatholyte)
-        self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["refill"],dutyRefill)
+        if PID_PUMPS["refill"] is not None:
+            self.notify_event(CEvents.AUTO_DUTY_SET,PID_PUMPS["refill"],dutyRefill)
 
     def __unregister_pid(self):
         self.__close_pid()
