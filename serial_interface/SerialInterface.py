@@ -52,8 +52,10 @@ class SerialInterface(GenericInterface):
 
     async def write(self,val: str):
         if self.__thread_alive.is_set():
-            await asyncio.sleep(0.1)
             self.__write_queue.put(val)
+            await asyncio.sleep(0.1)
+            while not self.__write_queue.empty():
+                await asyncio.sleep(0.1)
             print(f"writing: {val}")
         else:
             err = self.__thread_error.get_value()
@@ -82,13 +84,14 @@ def write_loop(serial_inst: Serial, write_queue: queue.Queue[str]):
     if newwrite:
         nextqueue = write_queue.get()
         command = get_first_command(nextqueue)
+        nextqueue = nextqueue.removeprefix(command)
+        if get_first_command(nextqueue) != "":
+            write_queue.put(nextqueue)
         if command != "":
             serial_inst.write(command.encode())
             serial_inst.reset_output_buffer()
             time.sleep(1)
-        nextqueue = nextqueue.removeprefix(command)
-        if get_first_command(nextqueue) != "":
-            write_queue.put(nextqueue)
+        
     
     
 
