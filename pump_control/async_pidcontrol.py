@@ -64,11 +64,11 @@ class PIDRunner(Generator[Duties]):
 
         self.__logging = self.__logging_state.value
         try:
-            level_buffer, frame = self.__input_state.get_value()
-            if level_buffer is not None:
+            level_state = self.__input_state.get_value()
+            if level_state is not None:
                 # There is new data! Read it from the level generator queue
  
-                last_readings = np.array(level_buffer.read())
+                last_readings = np.array(level_state[0].read())
 
                 # Calculate the average of the buffer readings
                 # negative if reading 1 greater than reading 2
