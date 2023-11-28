@@ -31,7 +31,7 @@ class SerialInterface(GenericInterface):
                 self.__thread.join()
                 raise InterfaceException("Serial port not found")
             elif err is not None:
-                self.__thread.__join()
+                self.__thread.join()
                 raise err
 
     def close(self):
@@ -81,7 +81,7 @@ def write_loop(serial_inst: Serial, write_queue: queue.Queue[str]):
     i = 0
     nextwrite = ""
     newwrite = not write_queue.empty()
-    while not write_queue.empty() and i<10:
+    while (not write_queue.empty()) and i<10:
         nextval = write_queue.get()
         nextwrite += nextval
         i += 1
