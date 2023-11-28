@@ -78,16 +78,19 @@ def serial_loop(port, read_queue: queue.Queue[str], write_queue: queue.Queue[str
             serial_inst.close()
 
 def write_loop(serial_inst: Serial, write_queue: queue.Queue[str]):
-    i = 0
-    nextwrite = ""
     newwrite = not write_queue.empty()
-    while (not write_queue.empty()) and i<10:
-        nextval = write_queue.get()
-        nextwrite += nextval
-        i += 1
     if newwrite:
-        serial_inst.write(nextwrite.encode())
-        serial_inst.reset_output_buffer()
+        nextqueue = write_queue.get()
+        command = get_first_command(nextqueue)
+        if command != "":
+            serial_inst.write(command.encode())
+            serial_inst.reset_output_buffer()
+            time.sleep(1)
+        nextqueue = nextqueue.removeprefix(command)
+        if get_first_command(nextqueue) != "":
+            write_queue.put(nextqueue)
+    
+    
 
 def read_loop(serial_inst: Serial, read_queue: queue.Queue[str]):
     currentbytes = bytearray()
@@ -103,3 +106,19 @@ def read_loop(serial_inst: Serial, read_queue: queue.Queue[str]):
             currentbytes = bytearray()
         else:
             currentbytes += nextbyte
+
+def get_first_command(comstr: str):
+    outstr = ""
+    incommand = False
+    for char in comstr:
+        if char == "<":
+            incommand=True
+        elif char == ">":
+            incommand = False
+            outstr += char
+            break
+        if incommand:
+            outstr += char
+    if len(outstr)>0 and outstr[-1] == ">":
+        return outstr
+    return ""
