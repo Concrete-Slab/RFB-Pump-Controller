@@ -134,8 +134,8 @@ class ControllerPageController(UIController):
         box = self._create_alert(CV2Warning,default_video_device=ControllerPageController.DEFAULT_VIDEO_DEVICE)
         print("after box line")
 
-    def __send_level_config(self,device_number: int, r1: tuple[int,int,int,int], r2: tuple[int,int,int,int], h: tuple[int,int,int,int], ref_vol: float, init_vol: float):
-        (state_running,state_levels) = self.pump.start_levels(device_number,r1,r2,h,ref_vol,init_vol)
+    def __send_level_config(self,device_number: int, r1: tuple[int,int,int,int], r2: tuple[int,int,int,int], h: tuple[int,int,int,int], ref_vol: float):
+        (state_running,state_levels) = self.pump.start_levels(device_number,r1,r2,h,ref_vol)
         
         if len(self.__level_removal_callbacks) == 0:
             self.__level_removal_callbacks.append(self._add_state(state_running,self.__handlerunning_level))

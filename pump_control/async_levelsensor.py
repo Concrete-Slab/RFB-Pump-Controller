@@ -1,5 +1,5 @@
 from support_classes import Generator, SharedState, GeneratorException
-from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, LEVEL_AVERAGE_PERIOD_SHORT, CV2_KERNEL, LEVEL_STABILISATION_PERIOD
+from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, CV2_KERNEL_SIZE, LEVEL_STABILISATION_PERIOD
 from .Buffer import Buffer
 from .timeavg import TimeAvg
 import cv2
@@ -10,7 +10,8 @@ from math import isnan
 from pathlib import Path
 from .datalogger import log_data
 import numpy as np
-from typing import Any
+import copy
+import threading
 
 
 
@@ -29,18 +30,19 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         self.__rel_level_directory = rel_level_directory.strip("\\").strip("/").replace("\\","/")
         self.__LOG_PATH = Path(__file__).absolute().parent / self.__rel_level_directory
         
-        self.__delta_t = LEVEL_AVERAGE_PERIOD
-        self.__delta_t_short = LEVEL_AVERAGE_PERIOD_SHORT
+        # shared states:
+        # logging shared state: boolean that determines if data is saved
         self.__logging_state = logging_state
         self.__logging = self.__logging_state.value
+        # threading shared state: image that is updated with every new capture
+        self.__display_state: SharedState[np.ndarray|None] = SharedState(initialValue=None)
+        self.__display_flag = threading.Event()
+        self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
+
 
         # video parameters to be set at a later time before generation
         self.__vc: cv2.VideoCapture|None = None
         self.__video_device: int|None = None   
-        self.__rect1: Rect|None = None
-        self.__rect2: Rect|None = None
-        self.__rect_ref: Rect|None = None
-        self.__vol_ref: float|None = None
         self.__vol_init: float|None = None
 
         # logging filename to be set when the first data is to be logged
@@ -50,57 +52,47 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         # when set, it indicates that a reading has been made that has not been 
         self.sensed_event = sensed_event
 
+        # external buffer for averaging level readings
         buffer_size = int(BUFFER_WINDOW_LENGTH/LEVEL_SENSE_PERIOD)
         self.__buffer = LevelBuffer(buffer_size)
-        # secretly set the buffer to the correct size
+        # secretly set the buffer to the correct size without notifying of the change
         self.state.value = (self.__buffer, None)
 
-        self.__kernel = CV2_KERNEL
+        # internal buffer for averaging level readings
+        self.__reading_an = TimeAvg(LEVEL_AVERAGE_PERIOD)
+        self.__reading_cath = TimeAvg(LEVEL_AVERAGE_PERIOD)
 
-        
-        self.__reading1 = TimeAvg(self.__delta_t)
-        self.__reading2 = TimeAvg(self.__delta_t)
-        self.__reading1_short = TimeAvg(self.__delta_t_short)
-        self.__reading2_short = TimeAvg(self.__delta_t_short)
+        # loop counter: used in calculation for offset period
         self.__i: int = 0
 
         # used for performance learning: make sure state is sent roughly every 5 seconds
         # TODO maybe improve this algorithm from just simple mean
         self.__avg_perftime = 0.0
 
-    def set_vision_parameters(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float, vol_init: float):
+    def set_vision_parameters(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float):
         
-        if any((video_device is None, rect1 is None, rect2 is None, rect_ref is None, vol_ref is None, vol_init is None)):
+        if any((video_device is None, rect1 is None, rect2 is None, rect_ref is None, vol_ref is None)):
             raise GeneratorException("Null values supplied to level sensor parameters")
         self.__video_device = video_device
-        self.__rect1 = rect1
-        self.__rect2 = rect2
-        self.__rect_ref = rect_ref
-        self.__vol_ref = vol_ref
-        self.__vol_init = vol_init
+        self.__indexAn = _get_indices(rect1)
+        self.__indexCath = _get_indices(rect2)
+        self.__scale = vol_ref/rect_ref[3]
+        pass
 
     async def _setup(self):
-        print("levelsensor reached beginning of setup")
-        if any((self.__video_device is None, self.__rect1 is None, self.__rect2 is None, self.__rect_ref is None, self.__vol_ref is None, self.__vol_init is None)):
+        if any((self.__video_device is None, self.__indexAn is None, self.__indexCath is None, self.__scale is None)):
             raise GeneratorException("Null values supplied to level sensor parameters")
-
-        self.__height_max = max(self.__rect1[1],self.__rect2[1])
-        self.__height_min = min(self.__rect1[3],self.__rect2[3])
-
-        self.__rect1 = (int(self.__rect1[0]), int(self.__height_max), int(self.__rect1[2]), int(self.__height_min))
-        self.__rect2 = (int(self.__rect2[0]), int(self.__height_max), int(self.__rect2[2]), int(self.__height_min))
-        self.__r1_area = self.__rect1[2] * self.__rect1[3]
-        self.__r2_area = self.__rect2[2] * self.__rect2[3]
-
         self.__vc = cv2.VideoCapture(self.__video_device)
-        self.__i: int = 0
+        self.__i = 0
         self.__initial_timestamp = time.time()
         self.__logging = self.__logging_state.value
-        self.__sleep_time = 1
-        print("levelsensor reached end of setup")
+        self.__sleep_time = 0.5
+        self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
+        self.__display_thread.start()
 
     async def _loop(self) -> LevelBuffer|None:
 
+        # wait until next reading is due
         await asyncio.sleep(self.__sleep_time)
 
         # begin performance benchmarking
@@ -110,96 +102,52 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         rval, frame = self.__vc.read()
         t = time.time()
 
-        # perform image processing operations
-        frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        imCrop1 = frame[self.__height_max:int(self.__height_max +
-                                            self.__height_min),
-                        int(self.__rect1[0]):int(self.__rect1[0] + self.__rect1[2])]
-        imCrop1 = cv2.cvtColor(imCrop1, cv2.COLOR_RGB2GRAY)
-        otsu1, thr1 = cv2.threshold(
-            imCrop1, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        thr1 = cv2.morphologyEx(
-            thr1, cv2.MORPH_CLOSE, self.__kernel)
-        thr1 = cv2.GaussianBlur(thr1, (5, 5), 0)
-        imCrop2 = frame[self.__height_max:int(self.__height_max +
-                                            self.__height_min),
-                        int(self.__rect2[0]):int(self.__rect2[0] + self.__rect2[2])]
-        imCrop2 = cv2.cvtColor(imCrop2, cv2.COLOR_RGB2GRAY)
-        otsu2, thr2 = cv2.threshold(
-            imCrop2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        #ret, thr2 = cv2.threshold(
-        #    imCrop2, otsu1, 255, cv2.THRESH_BINARY)
-        thr2 = cv2.morphologyEx(
-            thr2, cv2.MORPH_CLOSE, self.__kernel)
-        thr2 = cv2.GaussianBlur(thr2, (5, 5), 0)
-        
-        scale = self.__vol_ref/self.__rect_ref[3]
-        calc1 = scale*(self.__r1_area - cv2.countNonZero(thr1)) * 1.0 / self.__rect1[2]
-        calc2 = scale*(self.__r2_area - cv2.countNonZero(thr2)) * 1.0 / self.__rect2[2]
+        # perform CV
+        frame_an = copy.copy(frame[self.__indexAn[0],self.__indexAn[1],:])
+        frame_an, vol_an = _filter(frame_an,self.__scale)
+        _draw_level(frame_an,vol_an/self.__scale)
 
-        # # there is some dead volume, both reservoir readings should initially add to initial combined volume
-        # # init_vol = calc1 + 2*offset1 + calc2
-        # if(self.__i==300): # offsets are determined after some iterations to allow readings to stabilize from noise
-            
-        #     # This code is rather cumbersome!!
-        #     reading1_short = TimeAvg(self.__delta_t_short)
-        #     reading2_short = TimeAvg(self.__delta_t_short)
-        #     offset = (self.__vol_init - reading1_short.calculate()-reading2_short.calculate())/2
-        #     self.__reading1 = TimeAvg(self.__delta_t)
-        #     self.__reading2 = TimeAvg(self.__delta_t)
-        #     print('Offset completed')
-        # if(self.__i>=300):
-        #     calc1+=offset
-        #     calc2+=offset
-
-        self.__reading1.append([calc1, t])
-        self.__reading2.append([calc2, t])
-        reading_calculation_1 = self.__reading1.calculate()
-        reading_calculation_2 = self.__reading2.calculate()
+        frame_cath = copy.copy(frame[self.__indexCath[0],self.__indexCath[1],:])
+        frame_cath, vol_cath = _filter(frame_cath,self.__scale)
+        _draw_level(frame_cath,vol_cath/self.__scale)
+ 
+        # store CV results in internal buffer and calculate new average readings
+        self.__reading_an.append([vol_an,t])
+        self.__reading_cath.append([vol_cath,t])
+        reading_calculation_an = self.__reading_an.calculate()
+        reading_calculation_cath = self.__reading_cath.calculate()
 
         # set the initial volume to the current volume while still in stabilisation period
         if self.__i*LEVEL_SENSE_PERIOD<LEVEL_STABILISATION_PERIOD:
-            self.__vol_init = reading_calculation_1 + reading_calculation_2
+            self.__vol_init = reading_calculation_an + reading_calculation_cath
 
-        thr1 = cv2.cvtColor(thr1, cv2.COLOR_GRAY2RGB)
-        thr1[np.where((thr1 == [0,0,0]).all(axis = 2))] = [0,33,166]
-        thr2 = cv2.cvtColor(thr2, cv2.COLOR_GRAY2RGB)
-        thr2[np.where((thr2 == [0,0,0]).all(axis = 2))] = [0,33,166]
+        net_vol_change = reading_calculation_an + reading_calculation_cath - self.__vol_init
+        vol_diff = reading_calculation_an - reading_calculation_cath
 
-        frame[self.__height_max:int(self.__height_max + self.__height_min),
-            int(self.__rect1[0]):int(self.__rect1[0] + self.__rect1[2])] = thr1
+        # modify the captured image to display the CV process
+        frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
+        frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
+        cv2.putText(frame, 'Electrolyte Loss (mL):{: 3.3f}'.format(0-net_vol_change), (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    1, (0, 0, 255), 2, cv2.LINE_AA)
+        self.__display_state.set_value(frame)
 
-        frame[self.__height_max:int(self.__height_max + self.__height_min),
-            int(self.__rect2[0]):int(self.__rect2[0] + self.__rect2[2])] = thr2
-        frame = frame
-        cv2.line(frame,(self.__rect1[0] + self.__rect1[2],self.__height_max),(self.__rect2[0],self.__height_max),(255,0,0),2)
-        cv2.line(frame,(self.__rect1[0] + self.__rect1[2],self.__height_max + self.__height_min),(self.__rect2[0],self.__height_max + self.__height_min),(255,0,0),2)
-
-        cv2.putText(frame, 'Electrolyte Loss (mL):{: 3.3f}'.format(self.__vol_init - reading_calculation_1-reading_calculation_2), (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    1, (255, 0, 0), 2, cv2.LINE_AA)
-        pass
-        # frame = [np.uint8(x) for x in frame]
-        pass
-        print(frame.__class__.__name__)
-        cv2.imshow("levelfeed",frame)
-        cv2.waitKey(30)
 
         # update the logging state
         self.__logging = self.__logging_state.value
 
-        # save the data to the internal buffer and the exposed state
+        
         elapsed_seconds = t - self.__initial_timestamp
         # reading is now finished, increment reading counter and record performance time
         end_time = time.perf_counter()
         perftime = (end_time-start_time)/1000 # time in seconds for computer vision
         self.__i += 1
         self.__sleep_time = max(LEVEL_SENSE_PERIOD - perftime,0)
-        print(self.__sleep_time)
 
         # save reading
-        if (not isnan(reading_calculation_1)) and (not isnan(reading_calculation_2)):
-            data = [elapsed_seconds, reading_calculation_1, reading_calculation_2, reading_calculation_1-reading_calculation_2,reading_calculation_1+reading_calculation_2-self.__vol_init]
+        if (not isnan(reading_calculation_an)) and (not isnan(reading_calculation_cath)):
+            data = [elapsed_seconds, reading_calculation_an, reading_calculation_cath, vol_diff,net_vol_change]
 
+            # save the data to the internal buffer and the exposed state
             self.__buffer.add(data)
             self.state.set_value((self.__buffer,frame))
             # additional asyncio event set for pid await line
@@ -211,9 +159,6 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
                 if self.__datafile is None:
                     self.__datafile = timestamp
                 log_data(self.__LOG_PATH,self.__datafile,data_str,column_headers=self.LOG_COLUMN_HEADERS)
-        
-        
-
 
     def __update_perftime(self,newperftime) -> float:
         newavg = (self.__avg_perftime*self.__i + newperftime) / (self.__i+1)
@@ -224,9 +169,55 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         self.__datafile = None
         if self.__vc is not None:
             self.__vc.release()
+        self.__display_flag.clear()
+        self.__display_thread.join()
         cv2.destroyAllWindows()
 
-    
+def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
+    frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    frm_width = np.shape(frame)[1]
+    assert CV2_KERNEL_SIZE % 2 == 1
+    kernel = np.ones((CV2_KERNEL_SIZE,CV2_KERNEL_SIZE))
+    central_index = int((CV2_KERNEL_SIZE-1)/2)
+    kernel[central_index,0:CV2_KERNEL_SIZE] = np.ones(CV2_KERNEL_SIZE)
+    kernel[0:CV2_KERNEL_SIZE,central_index] = np.ones(CV2_KERNEL_SIZE)
+    _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
+    frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
+    num_nonzero = np.zeros(frm_width)
+    for i,pixel_column in enumerate(frame.T):
+        num_nonzero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
+    median_height = float(np.median(num_nonzero))
+    frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+    return frame,scale*median_height
+
+def _draw_level(frame: np.array,height_from_base: float):
+    sz = np.shape(frame)
+    height_from_base = int(height_from_base)
+    frm_height=sz[0]
+    frm_width=sz[1]
+    try:
+        # frame might be color already
+        frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+    except:
+        pass
+    cv2.line(frame,(0,frm_height-height_from_base),(frm_width-1,frm_height-height_from_base),(0,0,255),thickness=2)
+
+def _get_indices(r: Rect):
+    return  (slice(r[1],r[1]+r[3]), slice(r[0],r[0]+r[2]))
+
+def _continuous_display(imgstate: SharedState[np.ndarray|None],run_event: threading.Event):
+    run_event.set()
+    try:
+        while run_event.is_set():
+            newimg = imgstate.get_value()
+            if newimg is not None:
+                cv2.imshow("Camera Feed",newimg)
+                cv2.waitKey(1)
+            time.sleep(0.1)
+    finally:
+        run_event.clear()
+        cv2.destroyWindow("Camera Feed")
 
 class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 

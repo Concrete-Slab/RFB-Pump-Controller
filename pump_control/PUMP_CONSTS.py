@@ -17,6 +17,7 @@ LEVEL_STABILISATION_PERIOD = 120.0
 """Period over which the initial volume calculation is stabilised"""
 CV2_KERNEL = np.ones([27,27],np.uint8)
 """kernel size for image processing operators"""
+CV2_KERNEL_SIZE = 31
 REFILL_LOSS_TRIGGER = 0.1
 """Percent loss of solvent that will trigger the refill system"""
 REFILL_DUTY = 50

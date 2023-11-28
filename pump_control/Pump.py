@@ -113,9 +113,9 @@ class Pump(AsyncRunner,Teardown):
     def stop_pid(self):
         self.__pid.stop()
 
-    def start_levels(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float, vol_init: float) -> tuple[SharedState[bool],SharedState[LevelBuffer]]:
+    def start_levels(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[LevelBuffer]]:
         try:
-            self.__level.set_vision_parameters(video_device, rect1, rect2, rect_ref, vol_ref, vol_init)
+            self.__level.set_vision_parameters(video_device, rect1, rect2, rect_ref, vol_ref)
         except ValueError as e:
             print()
             self.state.set_value(ErrorState(LevelException(str(e))))
