@@ -22,6 +22,8 @@ REFILL_LOSS_TRIGGER = 0.1
 """Percent loss of solvent that will trigger the refill system"""
 REFILL_DUTY = 50
 """Duty applied to the refill pump when PID controller detects low levels"""
+REFILL_TIME = 30
+"""Seconds for which the main reservoirs are topped up after a refill event is triggered"""
 
 class PumpNames(Enum):
     A = "a"
@@ -33,4 +35,5 @@ class PumpNames(Enum):
 
 PID_PUMPS: dict[str,PumpNames|None] = {"anolyte": PumpNames.E,
                                        "catholyte": PumpNames.F,
-                                       "refill": None}
+                                       "refill anolyte": None,
+                                       "refill catholyte": None}

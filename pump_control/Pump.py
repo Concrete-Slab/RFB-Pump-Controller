@@ -1,10 +1,8 @@
 from typing import Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
 from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException
-import threading
-import asyncio
 from concurrent.futures import Future
-from .async_levelsensor import LevelSensor, LevelBuffer, Rect, DummySensor
+from .async_levelsensor import LevelSensor, LevelBuffer, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
 from .PUMP_CONSTS import PumpNames, PID_PUMPS
@@ -73,6 +71,9 @@ class Pump(AsyncRunner,Teardown):
                 # Future completed with error: Assign error state to queue and close loop
                 self.state.set_value(ErrorState(e))
                 self.stop_event_loop()
+            except:
+                self.state.set_value(ErrorState(BaseException("Unknown Error")))
+                self.stop_event_loop()
         
         self.run_async(self.__serial_interface.establish(), callback = on_established)
 
@@ -140,18 +141,14 @@ class Pump(AsyncRunner,Teardown):
     def manual_set_duty(self,identifier: PumpNames, new_duty: int):
         # print("setting duty to "+str(new_duty))
         if is_duty(new_duty):
-            if identifier == PID_PUMPS["anolyte"]:
-                if self.__pid.is_running.value:
-                    self.stop_pid()
-                    stopb_str = GenericInterface.format_duty(PID_PUMPS["catholyte"].value,0)
-                    self.run_async(self.__serial_interface.write(stopb_str))
-                    self.state.set_value(ActiveState({PID_PUMPS["catholyte"]:0}))
-            elif identifier == PID_PUMPS["catholyte"]:
-                if self.__pid.is_running.value:
-                    self.stop_pid()
-                    stopcath_str = GenericInterface.format_duty(PID_PUMPS["anolyte"].value,0)
-                    self.run_async(self.__serial_interface.write(stopcath_str))
-                    self.state.set_value(ActiveState({PID_PUMPS["anolyte"]:0}))
+            if identifier in PID_PUMPS.values and self.__pid.is_running.value:
+                self.stop_pid()
+                state_dict: dict[PumpNames,int] = {}
+                for pidpmp in PID_PUMPS.values():
+                    if pidpmp is not None and pidpmp != identifier:
+                        self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp,0)))
+                        state_dict = {**state_dict, pidpmp: 0}
+                self.state.set_value(ActiveState(state_dict))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_async(self.__serial_interface.write(writestr))
 
