@@ -28,9 +28,3 @@ class App(UIRoot):
     def pump_control_page(self,pump: Pump,*args,**kwargs) -> ctk.CTkFrame:
         controller = ControllerPageController(self, pump)
         return ControllerPage(self,controller)
-
-
-if __name__ == '__main__':
-    application = App(debug=True)
-    application.mainloop()
-    TDExecutor.execute()
