@@ -141,7 +141,7 @@ class Pump(AsyncRunner,Teardown):
     def manual_set_duty(self,identifier: PumpNames, new_duty: int):
         # print("setting duty to "+str(new_duty))
         if is_duty(new_duty):
-            if identifier in PID_PUMPS.values and self.__pid.is_running.value:
+            if identifier in PID_PUMPS.values() and self.__pid.is_running.value:
                 self.stop_pid()
                 state_dict: dict[PumpNames,int] = {}
                 for pidpmp in PID_PUMPS.values():

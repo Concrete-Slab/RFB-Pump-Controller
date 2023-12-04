@@ -111,7 +111,7 @@ class PIDRunner(Generator[Duties]):
             await self.__write_nullsafe(PID_PUMPS["refill anolyte"],REFILL_DUTY)
             await self.__write_nullsafe(PID_PUMPS["refill catholyte"],REFILL_DUTY)
             self.__refill_start_time = None
-        duties = {}
+        duties: Duties = {}
         
         anolyte_refillrate = REFILL_DUTY if (self.__refill_start_time is not None and PID_PUMPS["refill anolyte"] is not None) else 0
         if PID_PUMPS["refill anolyte"] is not None:
