@@ -22,7 +22,7 @@ LevelBuffer = Buffer[list[float]]
 
 class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
-    LOG_COLUMN_HEADERS = ["Timestamp","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
+    LOG_COLUMN_HEADERS = ["Timestamp","Elapsed Time","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
 
     def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
@@ -98,18 +98,20 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         # begin performance benchmarking
         start_time = time.perf_counter()
 
+        #-----------CAPTURE-------------
         # take the frame and record its time
         rval, frame = self.__vc.read()
         t = time.time()
 
+        #---------COMPUTER-VISION---------
         # perform CV
         frame_an = copy.copy(frame[self.__indexAn[0],self.__indexAn[1],:])
         frame_an, vol_an = _filter(frame_an,self.__scale)
-        _draw_level(frame_an,vol_an/self.__scale)
+        # _draw_level(frame_an,vol_an/self.__scale)
 
         frame_cath = copy.copy(frame[self.__indexCath[0],self.__indexCath[1],:])
         frame_cath, vol_cath = _filter(frame_cath,self.__scale)
-        _draw_level(frame_cath,vol_cath/self.__scale)
+        # _draw_level(frame_cath,vol_cath/self.__scale)
  
         # store CV results in internal buffer and calculate new average readings
         self.__reading_an.append([vol_an,t])
@@ -123,19 +125,31 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
         net_vol_change = reading_calculation_an + reading_calculation_cath - self.__vol_init
         vol_diff = reading_calculation_an - reading_calculation_cath
-
-        # modify the captured image to display the CV process
+        
+        
+        #---------------DISPLAY-------------------
+        original_frame = copy.copy(frame)
+        # draw the level lines on the original and filtered images
+        if not isnan(reading_calculation_an) and not isnan(reading_calculation_cath):
+            _draw_level(frame_an,reading_calculation_an/self.__scale)
+            _draw_level(frame_cath,reading_calculation_cath/self.__scale)
+            _draw_level(original_frame[self.__indexAn[0],self.__indexAn[1],:],reading_calculation_an/self.__scale)
+            _draw_level(original_frame[self.__indexCath[0],self.__indexCath[1],:],reading_calculation_cath/self.__scale)
+        # place the filtered images onto the original image
         frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
-        cv2.putText(frame, 'Electrolyte Loss (mL):{: 3.3f}'.format(0-net_vol_change), (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    1, (0, 0, 255), 2, cv2.LINE_AA)
-        self.__display_state.set_value(frame)
+        # write information text
+        cv2.putText(frame, f'Electrolyte Loss (mL):{0-net_vol_change}\nAnolyte: {reading_calculation_an}mL\nCatholyte: {reading_calculation_cath}mL\nDiff: {vol_diff}m', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        # concatenate original and filtered images
+        displayimg = np.concatenate((frame,original_frame),axis=1)
+        # send to display thread
+        self.__display_state.set_value(displayimg)
 
 
+        #--------------SAVE---------------
         # update the logging state
         self.__logging = self.__logging_state.value
-
-        
         elapsed_seconds = t - self.__initial_timestamp
         # reading is now finished, increment reading counter and record performance time
         end_time = time.perf_counter()
@@ -176,11 +190,13 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
     frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
     frm_width = np.shape(frame)[1]
-    assert CV2_KERNEL_SIZE % 2 == 1
-    kernel = np.ones((CV2_KERNEL_SIZE,CV2_KERNEL_SIZE))
-    central_index = int((CV2_KERNEL_SIZE-1)/2)
-    kernel[central_index,0:CV2_KERNEL_SIZE] = np.ones(CV2_KERNEL_SIZE)
-    kernel[0:CV2_KERNEL_SIZE,central_index] = np.ones(CV2_KERNEL_SIZE)
+    # assert CV2_KERNEL_SIZE % 2 == 1
+    # kernel = np.ones((CV2_KERNEL_SIZE,CV2_KERNEL_SIZE))
+    # central_index = int((CV2_KERNEL_SIZE-1)/2)
+    # kernel[central_index,0:CV2_KERNEL_SIZE] = np.ones(CV2_KERNEL_SIZE)
+    # kernel[0:CV2_KERNEL_SIZE,central_index] = np.ones(CV2_KERNEL_SIZE)
+
+    kernel = np.ones((3,int(frm_width/2)))
     _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
     frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
@@ -251,8 +267,3 @@ class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
     def teardown(self):
         self.f.close()
         return super().teardown()
-
-
-
-
-
