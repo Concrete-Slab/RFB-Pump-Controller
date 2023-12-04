@@ -6,7 +6,8 @@ import queue
 from support_classes import SharedState
 import time
 
-
+SERIAL_WRITE_PAUSE = 1.5
+"""Seconds until a subsequent write command is sent. Allows the Teensyduino controller some processing time"""
 
 class SerialInterface(GenericInterface):
 
@@ -85,7 +86,7 @@ def write_loop(serial_inst: Serial, write_queue: queue.Queue[str]):
         if command != "":
             serial_inst.write(command.encode())
             serial_inst.reset_output_buffer()
-            time.sleep(1)
+            time.sleep(SERIAL_WRITE_PAUSE)
         nextqueue = nextqueue.removeprefix(command)
         if get_first_command(nextqueue) != "":
             write_queue.put(nextqueue)
