@@ -1,0 +1,8 @@
+/.idea/
+*.bmp
+**/__pycache__/
+/Legacy/
+**/node_modules/
+**/package-lock.json
+**/package.json
+**/pumps/
