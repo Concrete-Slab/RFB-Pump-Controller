@@ -8,7 +8,7 @@ from typing import Callable
 class PumpWidget(ctk.CTkFrame):
 
     def __init__(self, parent, identifier: str, duty_callback: Callable[[int],None]|None = None, widget_width = 300, widget_height = 60):
-        super().__init__(parent,)
+        super().__init__(parent,fg_color=ApplicationTheme.MANUAL_PUMP_COLOR)
         self._pumpName = identifier
 
         self.columnconfigure([1,2,3],weight=2,uniform="col")
@@ -34,7 +34,8 @@ class PumpWidget(ctk.CTkFrame):
         self._dutySetter = ValueSetterWidget(self, self.dutyVar, value_callback = lambda flt: duty_callback(int(flt)))
         self._dutySetter.grid(row=1, column=3, padx=10, pady=10, sticky="nsew")
 
-
+    def set_bgcolor(self,new_color: str):
+        self.configure(fg_color=new_color,require_redraw=True)
 
     def destroy(self):
         # TODO end the serial connection

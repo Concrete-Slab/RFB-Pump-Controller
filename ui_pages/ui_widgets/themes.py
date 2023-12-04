@@ -9,6 +9,8 @@ class ApplicationTheme:
     STATUS_FONT_SIZE = 18
     BUTTON_CORNER_RADIUS = 6
     ERROR_COLOR = '#FF0000'
+    AUTO_PUMP_COLOR = '#FF5000'
+    MANUAL_PUMP_COLOR = '#515151'
     GREEN = '#50BFAB'
     DARK_GREEN = '#3A8A7B'
     WHITE = '#F2F2F2'

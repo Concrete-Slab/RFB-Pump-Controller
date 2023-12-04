@@ -2,7 +2,7 @@ import customtkinter as ctk
 from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme
 from .UIController import UIController
 from .PAGE_EVENTS import CEvents,ProcessName
-from pump_control import PumpNames
+from pump_control import PumpNames,PID_PUMPS
 
 
 
@@ -76,6 +76,10 @@ class ControllerPage(ctk.CTkFrame):
         match switch_prefix:
             case ProcessName.PID:
                 self.pid_state.set(int(state.value))
+                if state == SwitchState.ON:
+                    self.__set_pid_colors(ApplicationTheme.AUTO_PUMP_COLOR)
+                elif state == SwitchState.OFF:
+                    self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
             case ProcessName.LEVEL:
                 self.level_state.set(int(state.value))
             case ProcessName.DATA:
@@ -89,6 +93,10 @@ class ControllerPage(ctk.CTkFrame):
     def __on_ready(self):
         self.status_label.configure(text="Ready",text_color=ApplicationTheme.WHITE)
             
+    def __set_pid_colors(self,new_color):
+        for pmp in PID_PUMPS.values():
+            if pmp is not None:
+                self.pump_map[pmp].set_bgcolor(new_color)
 
     def destroy(self):
         # self.controller.close()
