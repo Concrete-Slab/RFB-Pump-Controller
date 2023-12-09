@@ -4,6 +4,7 @@ from pump_control import Pump, PumpNames, PumpState, ReadyState, ActiveState, Er
 from .CV2Warning import CV2Warning
 from .PAGE_EVENTS import CEvents, ProcessName
 from serial_interface import InterfaceException
+from typing import Callable
     
 
 class ControllerPageController(UIController):
@@ -27,6 +28,12 @@ class ControllerPageController(UIController):
         self.add_listener(CEvents.START_PROCESS,self.__start_process)
         self.add_listener(CEvents.CLOSE_PROCESS,self.__close_process)
         self.add_listener(CEvents.MANUAL_DUTY_SET,self.pump.manual_set_duty)
+        settings_callbacks: dict[ProcessName,Callable[[None],None]] = {
+            ProcessName.PID: self.__change_settings_pid,
+            ProcessName.LEVEL: self.__change_settings_level,
+            ProcessName.DATA: self.__change_settings_data
+        }
+        self.add_listener(CEvents.OPEN_SETTINGS,lambda process_name: settings_callbacks[process_name]())
 
         # PID events
 
@@ -109,6 +116,10 @@ class ControllerPageController(UIController):
         for pmp in newduties.keys():
             self.notify_event(CEvents.AUTO_DUTY_SET,pmp,newduties[pmp])
 
+    def __change_settings_pid(self):
+        print("Change PID Settings")
+        self.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.PID)
+
     def __unregister_pid(self):
         self.__close_pid()
         for rmcb in self.__pid_removal_callbacks:
@@ -118,6 +129,9 @@ class ControllerPageController(UIController):
     def __start_data(self):
         self.pump.logging_state.set_value(True)
         self.notify_event(CEvents.PROCESS_STARTED,ProcessName.DATA)
+
+    def __change_settings_data(self):
+        pass
 
     def __close_data(self):
         self.pump.logging_state.set_value(False)
@@ -142,6 +156,9 @@ class ControllerPageController(UIController):
             self.notify_event(CEvents.PROCESS_CLOSED,ProcessName.LEVEL)
     
     def __handlelevels_level(self,newbuffer):
+        pass
+
+    def __change_settings_level(self):
         pass
 
     def __close_level(self):

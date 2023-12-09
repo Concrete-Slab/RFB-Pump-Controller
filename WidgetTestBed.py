@@ -1,14 +1,12 @@
 from ui_pages import *
 import customtkinter as ctk
 from typing import Callable
-from ui_pages.ui_widgets import PumpWidget,ValueSetterWidget,BoolSwitch
-from ui_root.CTkPollable import CTkPollable
-import threading
-import atexit
+from ui_root import UIRoot
+from ui_pages.ui_widgets import BoolSwitch
 
 
 def test_widget(widget_constructor: Callable[[ctk.CTkFrame], ctk.CTkBaseClass]):
-    test_app = CTkPollable()
+    test_app = UIRoot()
     wrapper = ctk.CTkFrame(test_app)
     wrapper.pack()
     test_subject = widget_constructor(wrapper)
@@ -18,8 +16,9 @@ def test_widget(widget_constructor: Callable[[ctk.CTkFrame], ctk.CTkBaseClass]):
 
 if __name__ == '__main__':
     def widgetfun(parent: ctk.CTkFrame) -> ctk.CTkBaseClass:
-        controller = PortSelectController(debug=True)
-        return PortSelectPage(parent,controller)
-        # return PumpWidget(parent,"a")
-        # return ControllerPage(parent,["a","b","c","d","e","f"])
+        settings_pressed = lambda: print("Settings")
+        state_pressed = lambda x: print("State pressed")
+        intvar = ctk.IntVar(value=0)
+        name = "Test"
+        return BoolSwitch(parent,intvar,name,state_pressed,settings_pressed)
     test_widget(widgetfun)

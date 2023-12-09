@@ -38,16 +38,24 @@ class CEvents(Enum):
     """Signals for a specified process to close. Callbacks to take ProcessName as an argument"""
     LEVEL_DATA_ACQUIRED = Literal["level_data_acquired"]
     """Signals that the required parameters for the level sensor have been acquired. Callbacks to take device_number, r1, r2, h, ref_vol, and init_vol as arguments"""
+    OPEN_SETTINGS = Literal["open_settings"]
+    """User wishes to open the settings for a process. Callbacks to take ProcessName as argument"""
+    CLOSE_SETTINGS = Literal["close_settings"]
+    """User wishes to close the settings window for a process. Callbacks to take ProcessName as argument"""
+    SETTINGS_CONFIRMED = Literal["settings_confirmed"]
     
     
 
 class ProcessName(Enum):
-    PID = Literal["pid"]
-    """Process that runs the PID duty control feedback loop"""
-    LEVEL = Literal["level"]
+    LEVEL = "Level"
     """Process that reads the electrolyte reservoir levels"""
-    DATA = Literal["data"]
+    DATA = "Data Logging"
     """Process that writes duties and levels to respective csv files during operation"""
+    PID = "PID"
+    """Process that runs the PID duty control feedback loop"""
 
-
-
+PROCESS_HAS_SETTINGS: dict[ProcessName, bool] = {
+    ProcessName.LEVEL: False,
+    ProcessName.DATA: True,
+    ProcessName.PID: True,
+}

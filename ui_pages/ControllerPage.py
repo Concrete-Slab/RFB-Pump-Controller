@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme
 from .UIController import UIController
-from .PAGE_EVENTS import CEvents,ProcessName
+from .PAGE_EVENTS import CEvents,ProcessName,PROCESS_HAS_SETTINGS
 from pump_control import PumpNames,PID_PUMPS
 
 
@@ -14,7 +14,7 @@ class ControllerPage(ctk.CTkFrame):
         self.UIcontroller = controller
         
         self.pump_map: dict[PumpNames, PumpWidget] = {}
-        nColumns = 5
+        nColumns = len(ProcessName) + 2
         nInitialRows = 2
         self.columnconfigure(list(range(1,nColumns-1)),weight=1,uniform="col")
         self.columnconfigure([0,nColumns-1],weight=1)
@@ -38,15 +38,33 @@ class ControllerPage(ctk.CTkFrame):
                                         )
         self.status_label.grid(row=1,column=0,columnspan=nColumns,padx=10,pady=5)
 
-        self.pid_state = ctk.IntVar(value=0)
-        pid_box = BoolSwitch(self,self.pid_state,"PID", state_callback = lambda state: self.__switch_pressed(state,ProcessName.PID))
-        self.level_state = ctk.IntVar(value=0)
-        level_box = BoolSwitch(self,self.level_state,"Level Sensing", state_callback = lambda state: self.__switch_pressed(state,ProcessName.LEVEL))
-        level_box.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
-        pid_box.grid(row=0,column=3,padx=10,pady=5,sticky="nsew")
-        self.data_state = ctk.IntVar(value=0)
-        data_box = BoolSwitch(self,self.data_state,"Data Logging", state_callback = lambda state: self.__switch_pressed(state,ProcessName.DATA))
-        data_box.grid(row=0,column=2,padx=10,pady=5,sticky="nsew")
+        self.process_states: dict[ProcessName,ctk.IntVar] = {}
+        self.process_boxes: dict[ProcessName,BoolSwitch] = {}
+
+        for j,process in enumerate(ProcessName):
+            process_state_var = ctk.IntVar(value=0)
+            if PROCESS_HAS_SETTINGS[process]:
+                settings_fun = lambda: self.UIcontroller.notify_event(CEvents.OPEN_SETTINGS,process)
+            else:
+                settings_fun = None
+            process_box = BoolSwitch(self,process_state_var,str(process.value), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
+            process_box.grid(row=0,column=j+1,padx=10,pady=5,sticky="nsew")
+            self.process_states[process] = process_state_var
+            self.process_boxes[process] = process_box
+
+        # TODO make this less copy/paste - maybe use a map or some kind of private class/function
+        # self.pid_state = ctk.IntVar(value=0)
+        # self.pid_settings = ctk.BooleanVar(value=True)
+        # pid_box = BoolSwitch(self,self.pid_state,"PID", state_callback = lambda state: self.__switch_pressed(state,ProcessName.PID), settings_callback = lambda : self.__settings_pressed(ProcessName.PID))
+        # pid_box.grid(row=0,column=3,padx=10,pady=5,sticky="nsew")
+        # self.level_state = ctk.IntVar(value=0)
+        # self.level_settings = ctk.BooleanVar(value=True)
+        # level_box = BoolSwitch(self,self.level_state,"Level Sensing", state_callback = lambda state: self.__switch_pressed(state,ProcessName.LEVEL), settings_callback = lambda : self.__settings_pressed(ProcessName.LEVEL))
+        # level_box.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
+        # self.data_state = ctk.IntVar(value=0)
+        # self.data_settings = ctk.BooleanVar(value=True)
+        # data_box = BoolSwitch(self,self.data_state,"Data Logging", state_callback = lambda state: self.__switch_pressed(state,ProcessName.DATA), settings_callback = lambda : self.__settings_pressed(ProcessName.DATA))
+        # data_box.grid(row=0,column=2,padx=10,pady=5,sticky="nsew")
 
         # add remaining controller listeners
 
@@ -56,6 +74,10 @@ class ControllerPage(ctk.CTkFrame):
         self.UIcontroller.add_listener(CEvents.PROCESS_CLOSED, lambda prefix: self.__set_switch_state(prefix,SwitchState.OFF))
         self.UIcontroller.add_listener(CEvents.AUTO_DUTY_SET,self.__auto_duty_set)
         self.UIcontroller.add_listener(CEvents.AUTO_SPEED_SET,self.__auto_speed_set)
+
+        self.UIcontroller.add_listener(CEvents.CLOSE_SETTINGS,lambda process_name: self.process_boxes[process_name].set_settings_button_active(True))
+
+        
 
     def __auto_duty_set(self,identifier: PumpNames,duty: int):
         self.pump_map[identifier].dutyVar.set(duty)
@@ -73,19 +95,27 @@ class ControllerPage(ctk.CTkFrame):
             self.UIcontroller.notify_event(CEvents.CLOSE_PROCESS,switch_prefix)
 
     def __set_switch_state(self,switch_prefix: ProcessName,state: SwitchState):
-        match switch_prefix:
-            case ProcessName.PID:
-                self.pid_state.set(int(state.value))
-                if state == SwitchState.ON:
-                    self.__set_pid_colors(ApplicationTheme.AUTO_PUMP_COLOR)
-                elif state == SwitchState.OFF:
-                    self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
-            case ProcessName.LEVEL:
-                self.level_state.set(int(state.value))
-            case ProcessName.DATA:
-                self.data_state.set(int(state.value))
-            case _:
-                raise ValueError(f"Device prefix \"{switch_prefix}\" not accounted for")
+        self.process_states[switch_prefix].set(int(state.value))
+        if switch_prefix == ProcessName.PID:
+            if state == SwitchState.ON:
+                self.__set_pid_colors(ApplicationTheme.AUTO_PUMP_COLOR)
+            elif state == SwitchState.OFF:
+                self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
+        # match switch_prefix:
+        #     case ProcessName.PID:
+        #         self.pid_state.set(int(state.value))
+        #         if state == SwitchState.ON:
+        #             self.__set_pid_colors(ApplicationTheme.AUTO_PUMP_COLOR)
+        #         elif state == SwitchState.OFF:
+        #             self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
+        #     case ProcessName.LEVEL:
+        #         self.level_state.set(int(state.value))
+        #     case ProcessName.DATA:
+        #         self.data_state.set(int(state.value))
+        #     case _:
+        #         raise ValueError(f"Device prefix \"{switch_prefix}\" not accounted for")
+
+
             
     def __on_error(self,error):
         self.status_label.configure(text = f"Error: {str(error)}",text_color=ApplicationTheme.ERROR_COLOR)
