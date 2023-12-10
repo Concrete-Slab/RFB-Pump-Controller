@@ -4,7 +4,7 @@ import datetime
 from .async_levelsensor import LevelBuffer
 from serial_interface import GenericInterface
 import asyncio
-from support_classes import Generator,SharedState
+from support_classes import Generator,SharedState,Loggable
 from .PUMP_CONSTS import PID_DATA_TIMEOUT, PID_PUMPS, REFILL_LOSS_TRIGGER, REFILL_DUTY, REFILL_TIME, PumpNames
 from pathlib import Path
 from .datalogger import log_data
@@ -12,25 +12,24 @@ import time
 
 Duties = dict[PumpNames,int]
 
-class PIDRunner(Generator[Duties]):
+class PIDRunner(Generator[Duties],Loggable):
 
-    LOG_COLUMN_HEADERS = ["Timestamp", "Elapsed Seconds", "Anolyte Pump Duty", "Catholyte Pump Duty", "Refill Pump Duty"]
-    
-    def __init__(self, level_state: SharedState[tuple[LevelBuffer,np.ndarray|None]], serial_interface: GenericInterface, level_event: asyncio.Event, logging_state: SharedState[bool]=SharedState(False), rel_duty_directory="\\pumps\\flowrates", base_duty=92, **kwargs) -> None:
-        super().__init__()
-        self.__rel_duty_directory = rel_duty_directory.strip("\\").strip("/").replace("\\","/")
-        self.__LOG_PATH = Path(__file__).absolute().parent / self.__rel_duty_directory
-        print(self.__LOG_PATH)
-        print(str(Path(__file__).absolute().parent))
+    LOG_COLUMN_HEADERS = ["Timestamp", "Elapsed Seconds", "Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
+    DEFAULT_DIRECTORY = "pumps/duties"
+
+    def __init__(self, level_state: SharedState[tuple[LevelBuffer,np.ndarray|None]], serial_interface: GenericInterface, level_event: asyncio.Event, logging_state: SharedState[bool]=SharedState(False), absolute_logging_directory: Path|None = None, base_duty=92, **kwargs) -> None:
+        
+        if absolute_logging_path is None:
+            absolute_logging_path = Path(__file__).absolute().parent / PIDRunner.DEFAULT_DIRECTORY
+        super().__init__(directory = absolute_logging_directory, default_headers = PIDRunner.LOG_COLUMN_HEADERS)
+        
+        
         self.__input_state = level_state
         self.__serial_interface = serial_interface
-        self.__logging = logging_state.value
         self.__logging_state = logging_state
-        self.__datafile: str|None = None
         self.__base_duty = base_duty
         self.__level_event = level_event
         self.__pid: PID|None = None
-        self.__is_refilling: bool = False
         self.__refill_start_time: float | None = None
 
     async def _setup(self):
@@ -42,6 +41,7 @@ class PIDRunner(Generator[Duties]):
         self.__pid.set_auto_mode(False)
         await asyncio.sleep(3)
         self.__pid.set_auto_mode(True, last_output=-.28)
+        self.new_file()
 
     async def _loop(self) -> Duties|None:
         # The following block continuously checks for either:
@@ -61,10 +61,8 @@ class PIDRunner(Generator[Duties]):
             return
         self.__level_event.clear()
 
-
         # update the state of the datalogger
 
-        self.__logging = self.__logging_state.value
         level_state = self.__input_state.get_value()
         if level_state is not None:
             # There is new data! Read it from the level generator queue
@@ -88,18 +86,18 @@ class PIDRunner(Generator[Duties]):
             duties: Duties = {**pid_duties,**refill_duties}
 
             # Optionally, save the new duties in the data file as a new line
-            if self.__logging:
+            if self.__logging_state.force_value():
                 timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
                 data = [timestamp, flowRateAn, flowRateCath,flowRateRefillAnolyte,flowRateRefillCatholyte]
-                if self.__datafile is None:
-                    self.__datafile = timestamp
-                log_data(self.__LOG_PATH.as_posix(),self.__datafile,data,column_headers=self.LOG_COLUMN_HEADERS)
-            
+                # if self.__datafile is None:
+                #     self.__datafile = timestamp
+                # log_data(self.__LOG_PATH.as_posix(),self.__datafile,data,column_headers=self.LOG_COLUMN_HEADERS)
+                self.log(data)
             return duties
         return None
 
     def teardown(self):
-        self.__datafile = None
+        pass
 
     async def __handle_refill(self,initial_volume,volume_change) -> tuple[int,int,Duties]:
         percent_change = 0-volume_change/initial_volume
