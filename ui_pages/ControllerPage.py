@@ -1,7 +1,8 @@
 import customtkinter as ctk
 from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme
 from .UIController import UIController
-from .PAGE_EVENTS import CEvents,ProcessName,PROCESS_HAS_SETTINGS
+from .PAGE_EVENTS import CEvents
+from .process_controllers import ProcessName
 from pump_control import PumpNames,PID_PUMPS
 
 
@@ -43,11 +44,11 @@ class ControllerPage(ctk.CTkFrame):
 
         for j,process in enumerate(ProcessName):
             process_state_var = ctk.IntVar(value=0)
-            if PROCESS_HAS_SETTINGS[process]:
-                settings_fun = lambda: self.UIcontroller.notify_event(CEvents.OPEN_SETTINGS,process)
+            if process.value.get_instance().has_settings:
+                settings_fun = lambda process_name = process: self.UIcontroller.notify_event(CEvents.OPEN_SETTINGS,process_name)
             else:
                 settings_fun = None
-            process_box = BoolSwitch(self,process_state_var,str(process.value), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
+            process_box = BoolSwitch(self,process_state_var,str(process.value.get_instance().name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
             process_box.grid(row=0,column=j+1,padx=10,pady=5,sticky="nsew")
             self.process_states[process] = process_state_var
             self.process_boxes[process] = process_box

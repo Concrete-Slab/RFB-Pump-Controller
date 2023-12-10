@@ -19,8 +19,8 @@ class PIDRunner(Generator[Duties],Loggable):
 
     def __init__(self, level_state: SharedState[tuple[LevelBuffer,np.ndarray|None]], serial_interface: GenericInterface, level_event: asyncio.Event, logging_state: SharedState[bool]=SharedState(False), absolute_logging_directory: Path|None = None, base_duty=92, **kwargs) -> None:
         
-        if absolute_logging_path is None:
-            absolute_logging_path = Path(__file__).absolute().parent / PIDRunner.DEFAULT_DIRECTORY
+        if absolute_logging_directory is None:
+            absolute_logging_directory = Path(__file__).absolute().parent / PIDRunner.DEFAULT_DIRECTORY
         super().__init__(directory = absolute_logging_directory, default_headers = PIDRunner.LOG_COLUMN_HEADERS)
         
         

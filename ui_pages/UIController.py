@@ -26,7 +26,7 @@ class UIController:
         return self.__root.register_state(state,callback)
     
     def _create_alert(self,toplevel: Callable[...,ctk.CTkToplevel],*args,**kwargs):
-        alert = toplevel(self.__root,self,*args,**kwargs)
+        alert = toplevel(self.__root,*args,**kwargs)
         alert.focus_set()
         return alert
     

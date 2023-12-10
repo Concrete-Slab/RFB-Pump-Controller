@@ -1,10 +1,12 @@
+from abc import ABC, abstractmethod
+from enum import Enum
 from .UIController import UIController
 from ui_root import UIRoot
 from pump_control import Pump, PumpNames, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException, PID_PUMPS
-from .CV2Warning import CV2Warning
-from .PAGE_EVENTS import CEvents, ProcessName
+from .toplevel_boxes import LevelSelect
+from .PAGE_EVENTS import CEvents
 from serial_interface import InterfaceException
-from typing import Callable
+from .process_controllers import ProcessName
     
 
 class ControllerPageController(UIController):
@@ -23,18 +25,22 @@ class ControllerPageController(UIController):
         # pump_join_remover = self._add_event(pump.join_event,pump.stop_event_loop,single_call=True)
         # self.__other_removal_callbacks.append(pump_join_remover)
 
+        # dependency injection
+        for process in ProcessName:
+            process.value.get_instance().set_context(self,self.pump)
 
         # General process events
-        self.add_listener(CEvents.START_PROCESS,self.__start_process)
-        self.add_listener(CEvents.CLOSE_PROCESS,self.__close_process)
-        self.add_listener(CEvents.MANUAL_DUTY_SET,self.pump.manual_set_duty)
-        settings_callbacks: dict[ProcessName,Callable[[None],None]] = {
-            ProcessName.PID: self.__change_settings_pid,
-            ProcessName.LEVEL: self.__change_settings_level,
-            ProcessName.DATA: self.__change_settings_data
-        }
-        self.add_listener(CEvents.OPEN_SETTINGS,lambda process_name: settings_callbacks[process_name]())
+        def start_process(process: ProcessName):
+            process.value.get_instance().start()
+        self.add_listener(CEvents.START_PROCESS,start_process)
+        def close_process(process: ProcessName):
+            process.value.get_instance().close()
+        self.add_listener(CEvents.CLOSE_PROCESS,close_process)
+        def open_settings(process: ProcessName):
+            process.value.get_instance().open_settings()
+        self.add_listener(CEvents.OPEN_SETTINGS, open_settings)
 
+        self.add_listener(CEvents.MANUAL_DUTY_SET,self.pump.manual_set_duty)
         # PID events
 
 
@@ -139,8 +145,7 @@ class ControllerPageController(UIController):
     
     # LEVEL SENSING CALLBACKS
     def __start_level(self):
-        box = self._create_alert(CV2Warning,default_video_device=ControllerPageController.DEFAULT_VIDEO_DEVICE)
-        print("after box line")
+        box = self._create_alert(LevelSelect,default_video_device=ControllerPageController.DEFAULT_VIDEO_DEVICE)
 
     def __send_level_config(self,device_number: int, r1: tuple[int,int,int,int], r2: tuple[int,int,int,int], h: tuple[int,int,int,int], ref_vol: float):
         (state_running,state_levels) = self.pump.start_levels(device_number,r1,r2,h,ref_vol)
@@ -185,12 +190,3 @@ class ControllerPageController(UIController):
         new_dict = newspeeds
         for pmp in new_dict.keys():
             self.notify_event(CEvents.AUTO_SPEED_SET,pmp,new_dict[pmp])
-
-
-        
-
-
-
-        
-
-
