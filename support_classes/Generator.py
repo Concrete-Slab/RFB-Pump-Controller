@@ -12,8 +12,8 @@ class GeneratorException(BaseException):
 
 class Generator(Generic[T],ABC):
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self,*args,**kwargs) -> None:
+        super().__init__(*args,**kwargs)
         self.state = SharedState[T]()
         self.__flag = asyncio.Event()
         self.is_running = SharedState[bool](False)
