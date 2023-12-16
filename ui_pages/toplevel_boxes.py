@@ -1,11 +1,10 @@
 import customtkinter as ctk
-from .UIController import UIController
-from .PAGE_EVENTS import CEvents, ProcessName
 import cv2
-from support_classes import open_cv2_window, capture, CaptureException
+from support_classes import open_cv2_window, capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS
 from typing import Generic,ParamSpec,Callable,Any
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
+import copy
 import json
 
 SuccessSignature = ParamSpec("SuccessSignature")
@@ -17,15 +16,16 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
         self.__on_success = on_success
         self.__event_listeners: dict[str, list[Callable[...,None]]] = {}
         # bring alert box to fromt
-        self.attributes('-topmost', 1)
-        self.after(500,lambda: self.attributes('-topmost', 0))
+        self.bring_forward()
     
     def destroy_successfully(self,*args: SuccessSignature.args, **kwargs: SuccessSignature.kwargs) -> None:
-        self.__on_success(*args,**kwargs)
+        if self.__on_success is not None:
+            self.__on_success(*args,**kwargs)
         super().destroy()
 
     def destroy(self) -> None:
-        self.__on_failure()
+        if self.__on_failure is not None:
+            self.__on_failure()
         super().destroy()
 
     def add_listener(self,event: str, callback: Callable[...,None]) -> Callable[[None],None]:
@@ -43,6 +43,10 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
         if event in self.__event_listeners.keys():
             for cb in self.__event_listeners[event]:
                 cb(*args,**kwargs)
+
+    def bring_forward(self):
+        self.attributes('-topmost', 1)
+        self.after(400,lambda: self.attributes('-topmost', 0))
     
 class DataSettingsBox(AlertBox[dict[str,Any]]):
 
@@ -52,19 +56,21 @@ class DataSettingsBox(AlertBox[dict[str,Any]]):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         
         ## READ THE CURRENT SETTINGS
-        with open("settings.json","r") as f:
-            settings: dict[str,Any] = dict(json.load(f))
+        # with open("settings.json","r") as f:
+        #     settings: dict[str,Any] = dict(json.load(f))
         
-        self.__prev_logging_settings = {k:settings[k] for k in ("log_levels","log_pid","log_speeds","logging_directory") if k in settings.keys()}
-        prev_log_levels: bool = settings["log_levels"]
-        prev_log_pid: bool = settings["log_pid"]
-        prev_log_speeds: bool = settings["log_speeds"]
-        prev_level_directory: str|None = settings["level_directory"]
+        # self.__prev_logging_settings = {k:settings[k] for k in (Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS) if k in settings.keys()}
+        
+        self.__prev_logging_settings = read_settings(*LOGGING_SETTINGS)
+        prev_log_levels: bool = self.__prev_logging_settings[Settings.LOG_LEVELS]
+        prev_log_pid: bool = self.__prev_logging_settings[Settings.LOG_PID]
+        prev_log_speeds: bool = self.__prev_logging_settings[Settings.LOG_SPEEDS]
+        prev_level_directory: Path|None = self.__prev_logging_settings[Settings.LEVEL_DIRECTORY]
 
         try:
-            self.__initial_directory = Path(prev_level_directory).parent if prev_level_directory is not None else Path().absolute().parent
+            self.__initial_directory = prev_level_directory.parent if prev_level_directory is not None else Path().absolute()
         except:
-            self.__initial_directory = Path().absolute().parent
+            self.__initial_directory = Path().absolute()
         
         switch_frame = ctk.CTkFrame(self,fg_color=self._fg_color)
         switch_frame.rowconfigure([0,1,2],weight=1,uniform="switch_rows")
@@ -109,8 +115,10 @@ class DataSettingsBox(AlertBox[dict[str,Any]]):
         
     def __select_from_explorer(self):
         new_directory = ctk.filedialog.askdirectory(initialdir = self.__initial_directory,mustexist=True)
+        self.bring_forward()
         if new_directory != "":
             self.__directory_var.set(new_directory)
+            self.__initial_directory = Path(new_directory)
 
     def __confirm_settings(self):
         def cast_s2b(state: str):
@@ -122,31 +130,203 @@ class DataSettingsBox(AlertBox[dict[str,Any]]):
             new_logging_directory = self.__initial_directory
 
         new_logging_settings = {
-            "log_levels": cast_s2b(self.__level_var.get()),
-            "log_pid": cast_s2b(self.__pid_var.get()),
-            "log_speeds": cast_s2b(self.__speed_var.get()),
-            "level_directory": (new_logging_directory / "levels").as_posix(),
-            "pid_directory": (new_logging_directory / "duties").as_posix(),
-            "speed_directory": (new_logging_directory / "speeds").as_posix(),
+            Settings.LOG_LEVELS: cast_s2b(self.__level_var.get()),
+            Settings.LOG_PID: cast_s2b(self.__pid_var.get()),
+            Settings.LOG_SPEEDS: cast_s2b(self.__speed_var.get()),
+            Settings.LEVEL_DIRECTORY: (new_logging_directory / "levels"),
+            Settings.PID_DIRECTORY: (new_logging_directory / "duties"),
+            Settings.SPEED_DIRECTORY: (new_logging_directory / "speeds"),
         }
 
-        ## read the current settings
-        with open("settings.json","r") as f:
-            settings: dict[str,Any] = dict(json.load(f))
-        
-        modifications: dict[str,Any] = {}
-        for key in new_logging_settings.keys():
-            if (key not in self.__prev_logging_settings.keys()) or (new_logging_settings[key] != self.__prev_logging_settings[key]):
-                modifications[key] = new_logging_settings[key]
-            settings[key] = new_logging_settings[key]
-        
-        ## write the new settings to file
-        with open("settings.json","w") as f:
-            json.dump(settings,f)
-        
+    
+        modifications = modify_settings(new_logging_settings)
         ## close the window by notifying of modified changes
         self.destroy_successfully(modifications)
 
+class PIDSettingsBox(AlertBox[dict[str,Any]]):
+
+    def __init__(self, master: ctk.CTk, *args, on_success: Callable[..., None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
+        super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
+        
+        self.__default_options = ["None"]
+        for pmpname in PumpNames:
+            self.__default_options.append(pmpname.value.lower())
+
+        pid_settings = read_settings(*PID_SETTINGS)
+        pump_settings: dict[Settings,PumpNames|None] = {key:pid_settings[key] for key in PID_PUMPS}
+        an_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_PUMP]))
+        cath_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_PUMP]))
+        an_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_REFILL_PUMP]))
+        cath_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_REFILL_PUMP]))
+        self.__vars = [an_var,cath_var,an_re_var,cath_re_var]
+        
+        anolyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_var)
+        catholyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_var)
+        anolyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_re_var)
+        catholyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_re_var)
+        self.__boxes = [anolyte_selection,catholyte_selection,anolyte_refill_selection,catholyte_refill_selection]
+
+        an_label = ctk.CTkLabel(self,text="Anolyte Pump")
+        cath_label = ctk.CTkLabel(self,text="Catholyte Pump")
+        an_refill_label = ctk.CTkLabel(self,text="Anolyte Refill Pump")
+        cath_refill_label = ctk.CTkLabel(self,text="Catholyte Refill Pump")
+        labels = [an_label,cath_label,an_refill_label,cath_refill_label]
+
+        for i,var in enumerate(self.__vars):
+            var.trace("w",lambda *args,index=i: self.__update_selections(index,*args))
+            self.__boxes[i].grid(row=i,column=1,padx=10,pady=5,sticky="nsew")
+            labels[i].grid(row=i,column=0,padx=10,pady=5,sticky="nsew")
+
+
+        base_duty_label = ctk.CTkLabel(self,text="Equilibrium Control Duty")
+        rf_time_label = ctk.CTkLabel(self,text="Refill Time")
+        rf_duty_label = ctk.CTkLabel(self,text="Refill Duty")
+        rf_percent_label = ctk.CTkLabel(self,text="Refill Solvent Loss Trigger")
+
+        entry_labels = [base_duty_label,rf_time_label,rf_duty_label,rf_percent_label]
+
+        base_duty_frame = ctk.CTkFrame(self,corner_radius=0)
+        self.__base_duty_var = ctk.StringVar(value=pid_settings[Settings.BASE_CONTROL_DUTY])
+        base_duty_box = ctk.CTkEntry(base_duty_frame, textvariable=self.__base_duty_var, validate='key', validatecommand = (self.register(_validate_duty),"%P"))
+        base_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+
+        rf_time_frame = ctk.CTkFrame(self,corner_radius=0)
+        self.__rf_time_var = ctk.StringVar(value=pid_settings[Settings.REFILL_TIME])
+        rf_time_box = ctk.CTkEntry(rf_time_frame, textvariable=self.__rf_time_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
+        seconds_label = ctk.CTkLabel(rf_time_frame,text="s")
+        rf_time_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+        seconds_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
+
+        rf_duty_frame = ctk.CTkFrame(self,corner_radius=0)
+        self.__rf_duty_var = ctk.StringVar(value=pid_settings[Settings.REFILL_DUTY])
+        rf_duty_box = ctk.CTkEntry(rf_duty_frame, textvariable=self.__rf_duty_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
+        rf_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+
+        rf_percent_frame = ctk.CTkFrame(self,corner_radius=0)
+        self.__rf_percent_var = ctk.StringVar(value=pid_settings[Settings.REFILL_PERCENTAGE_TRIGGER])
+        rf_percent_box = ctk.CTkEntry(rf_percent_frame, textvariable=self.__rf_percent_var ,validate='key', validatecommand = (self.register(_validate_percent),"%P"))
+        percent_label = ctk.CTkLabel(rf_percent_frame,text="%")
+        rf_percent_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+        percent_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
+        self.__refill_entries = [rf_time_box,rf_duty_box,rf_percent_box]
+        entry_frames = [base_duty_frame,rf_time_frame,rf_duty_frame,rf_percent_frame]
+
+        currRow = len(self.__vars)
+
+        for j in range(0,len(entry_frames)):
+            entry_labels[j].grid(row=j+currRow,column=0,padx=10,pady=5,sticky="nsew")
+            entry_frames[j].grid(row=j+currRow,column=1,padx=5,pady=0,sticky="nsew")
+
+        currRow = currRow + len(entry_frames)
+        
+
+        confirm_button = ctk.CTkButton(self,command=self.__confirm_selections,text="Confirm",corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
+        confirm_button.grid(row=currRow,column=1,padx=10,pady=5,sticky="nes")
+        
+
+    def __update_selections(self,var_index,*args):
+        # make sure there are no duplicate selections
+        vars_copy = copy.copy(self.__vars)
+        selected_value = vars_copy.pop(var_index).get()
+        if selected_value != "None":
+            for var in vars_copy:
+                value = var.get()
+                if value == selected_value:
+                    var.set("None")
+
+        
+    def __confirm_selections(self):
+        pump_settings = {
+            Settings.ANOLYTE_PUMP: _str2json(self.__vars[0].get()),
+            Settings.CATHOLYTE_PUMP: _str2json(self.__vars[1].get()),
+            Settings.ANOLYTE_REFILL_PUMP: _str2json(self.__vars[2].get()),
+            Settings.CATHOLYTE_REFILL_PUMP: _str2json(self.__vars[3].get())
+        }
+        # final check that there are no duplicates (except None values)
+        prev_values = []
+        for key,value in pump_settings.items():
+            if value is not None and value in prev_values:
+                pump_settings[key] = None
+            prev_values.append(pump_settings[key])
+
+        base_duty = self.__base_duty_var.get()
+        rf_time = self.__rf_time_var.get()
+        rf_duty = self.__rf_duty_var.get()
+        rf_percent = self.__rf_percent_var.get()
+
+        valid_input = [_validate_duty(base_duty,allow_empty=False),_validate_time(rf_time,allow_empty=False),_validate_duty(rf_duty,allow_empty=False),_validate_percent(rf_percent,allow_empty=False)]
+
+        if all(valid_input):
+            refill_settings = {
+                Settings.BASE_CONTROL_DUTY: int(base_duty),
+                Settings.REFILL_TIME: int(rf_time),
+                Settings.REFILL_DUTY: int(rf_duty),
+                Settings.REFILL_PERCENTAGE_TRIGGER: int(rf_percent)
+            }
+            modifications = modify_settings({**pump_settings,**refill_settings})
+            self.destroy_successfully(modifications)
+        else:
+            for i in range(0,len(valid_input)):
+                entry_bgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if valid_input[i] else ApplicationTheme.ERROR_COLOR
+                self.__refill_entries[i].configure(fg_color=entry_bgcolor)
+
+
+
+
+
+def _json2str(json_result: PumpNames|None) -> str:
+    if json_result is None:
+        out = "None"
+    else:
+        out = json_result.value
+    return out
+
+def _str2json(str_result: str) -> PumpNames|None:
+    res: str|None = copy.copy(str_result)
+    if res == "None":
+        out = None
+    else:
+        out = PumpNames(res)
+    return out
+
+def _validate_time(timestr: str, allow_empty = True):
+    if timestr == "":
+        return allow_empty
+    try:
+        t = int(timestr)
+        if t>0:
+            return True
+        return False
+    except:
+        return False
+    
+def _validate_duty(dutystr: str, allow_empty = True):
+    if dutystr == "":
+        return allow_empty
+    try:
+        d = int(dutystr)
+        if d>=0 and d<=255:
+            return True
+        return False
+    except:
+        return False
+    
+def _validate_percent(percentstr: str, allow_empty = True):
+    if percentstr == "":
+        return allow_empty
+    try:
+        p = int(percentstr)
+        if p>0 and p<100:
+            return True
+        return False
+    except:
+        return False
+    
+            
+
+            
+
+            
 
 Rect = tuple[int,int,int,int] 
 

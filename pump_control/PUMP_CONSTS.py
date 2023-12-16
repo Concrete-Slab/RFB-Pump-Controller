@@ -44,6 +44,12 @@ class PumpNames(Enum):
 
     def is_pid(self):
         return self in __pid_pumps.values()
+    
+def to_pumpnames(pmp: str|None) -> PumpNames|None:
+            try:
+                return PumpNames(pmp)
+            except:
+                return None
 
 __pid_pumps: dict[str,PumpNames|None] = {}
 PID_PUMPS: dict[str,PumpNames|None] = {"anolyte": PumpNames.E,

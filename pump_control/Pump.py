@@ -1,13 +1,11 @@
-from typing import Coroutine, Iterable
+from typing import Any, Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
-from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException
+from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, PID_PUMPS
 from concurrent.futures import Future
 from .async_levelsensor import LevelSensor, LevelBuffer, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
-from .PUMP_CONSTS import PumpNames, PID_PUMPS
 from abc import ABC
-
 
 class PumpState(ABC):
     pass
@@ -39,27 +37,45 @@ class LevelException(BaseException):
 class Pump(AsyncRunner,Teardown):
 
     def __init__(self, serial_interface: GenericInterface, **kwargs) -> None:
-        # kwargs to include:
-        #   LOGGING - True/False
-        #   rel_duty_directory - relative directory for logging pump flowrates
-        #   rel_level_directory - relative directory for logging reservoir levels
-        #   queue_max_size - maximum size for the queue object containing serial buffer readings
-        LOGGING = kwargs.pop("LOGGING",True)
-        rel_duty_directory = kwargs.pop("rel_duty_directory","\\pumps\\flowrates")
-        rel_level_directory = kwargs.pop("rel_level_directory","\\pumps\\levels")
         super().__init__()
 
         self.__serial_interface = serial_interface
 
         self.state: SharedState[PumpState] = SharedState[PumpState]()
 
+        settings = read_settings()
+        self.__log_levels: bool = settings[Settings.LOG_LEVELS]
+        self.__log_pid: bool = settings[Settings.LOG_PID]
+        self.__log_speeds: bool = settings[Settings.LOG_SPEEDS]
+
+        anolyte_pump: PumpNames|None = settings[Settings.ANOLYTE_PUMP]
+        catholyte_pump: PumpNames|None = settings[Settings.CATHOLYTE_PUMP]
+        anolyte_refill_pump: PumpNames|None = settings[Settings.ANOLYTE_REFILL_PUMP]
+        catholyte_refill_pump: PumpNames|None = settings[Settings.CATHOLYTE_REFILL_PUMP]
+    
         self.logging_state: SharedState[bool] = SharedState[bool](False)
 
+        self.__level_logging_state: SharedState[bool] = SharedState[bool](False)
+        self.__pid_logging_state: SharedState[bool] = SharedState[bool](False)
+        self.__polling_logging_state: SharedState[bool] = SharedState[bool](False)
         # create the PID and level sense objects. The PID object operates on the shared state and sensed_event from the level object
         # self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
-        self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
-        self.__pid: PIDRunner = PIDRunner(self.__level.state,self.__serial_interface,self.__level.sensed_event,logging_state=self.logging_state,rel_duty_directory=rel_duty_directory)
-        self.__poller: SerialReader = SerialReader(self.__serial_interface)
+        self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state,absolute_logging_path=settings[Settings.LEVEL_DIRECTORY])
+        self.__pid: PIDRunner = PIDRunner(self.__level.state,
+                                          self.__serial_interface,
+                                          self.__level.sensed_event,
+                                          logging_state=self.__pid_logging_state,
+                                          absolute_logging_directory=settings[Settings.PID_DIRECTORY],
+                                          base_duty=settings[Settings.BASE_CONTROL_DUTY],
+                                          refill_time = settings[Settings.REFILL_TIME],
+                                          refill_duty = settings[Settings.REFILL_DUTY],
+                                          refill_percentage= settings[Settings.REFILL_PERCENTAGE_TRIGGER],
+                                          anolyte_pump = anolyte_pump,
+                                          catholyte_pump=catholyte_pump,
+                                          anolyte_refill_pump=anolyte_refill_pump,
+                                          catholyte_refill_pump=catholyte_refill_pump
+                                          )
+        self.__poller: SerialReader = SerialReader(self.__serial_interface,logging_directory=settings[Settings.SPEED_DIRECTORY],logging_state=self.__polling_logging_state)
 
     def initialise(self):
         def on_established(future: Future[None]):
@@ -139,18 +155,58 @@ class Pump(AsyncRunner,Teardown):
         self.__level.stop()
 
     def manual_set_duty(self,identifier: PumpNames, new_duty: int):
-        # print("setting duty to "+str(new_duty))
         if is_duty(new_duty):
-            if identifier in PID_PUMPS.values() and self.__pid.is_running.value:
+            pid_pumps = [pmp for pmp in self.__pid.get_pumps().values() if pmp is not None]
+            if identifier in pid_pumps and self.__pid.is_running.value:
                 self.stop_pid()
                 state_dict: dict[PumpNames,int] = {}
-                for pidpmp in PID_PUMPS.values():
+                for pidpmp in pid_pumps:
                     if pidpmp is not None and pidpmp != identifier:
                         self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp,0)))
                         state_dict = {**state_dict, pidpmp: 0}
                 self.state.set_value(ActiveState(state_dict))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_async(self.__serial_interface.write(writestr))
+
+    def change_settings(self,modifications: dict[Settings,Any]):
+        def _contains_any(lst1: list, lst2: list):
+            for item in lst1:
+                if item in lst2:
+                    return True
+            return False
+        def _contains_all(lst1: list, lst2: list):
+            for item in lst1:
+                if item not in lst2:
+                    return False
+            return True
+        modified_keys = set(modifications.keys())
+        if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY]):
+            self.stop_pid()
+
+        if Settings.LEVEL_DIRECTORY in modified_keys:
+            self.__level.set_dir(modifications[Settings.LEVEL_DIRECTORY])
+        if Settings.PID_DIRECTORY in modified_keys:
+            self.__pid.set_dir(modifications[Settings.PID_DIRECTORY])
+        if Settings.SPEED_DIRECTORY in modified_keys:
+            self.__poller.set_dir(modifications[Settings.SPEED_DIRECTORY])
+        
+        if Settings.LOG_LEVELS in modified_keys:
+            self.__log_levels = modifications[Settings.LOG_LEVELS]
+            self.__level_logging_state.set_value(self.__log_levels and self.logging_state.force_value())
+        if Settings.LOG_PID in modified_keys:
+            self.__log_pid = modifications[Settings.LOG_PID]
+            self.__pid_logging_state.set_value(self.__log_pid and self.logging_state.force_value())
+        if Settings.LOG_SPEEDS in modified_keys:
+            self.__log_speeds = modifications[Settings.LOG_SPEEDS]
+            self.__polling_logging_state.set_value(self.__log_speeds and self.logging_state.force_value())
+
+        self.__pid.set_parameters({key:modifications[key] for key in modified_keys if key in PID_SETTINGS})
+
+    def set_logging(self,new_state: bool):
+        self.__level_logging_state.set_value(self.__log_levels and new_state)
+        self.__pid_logging_state.set_value(self.__log_pid and new_state)
+        self.__polling_logging_state.set_value(self.__log_speeds and new_state)
+        self.logging_state.set_value(new_state)
 
     def teardown(self):
         # print("running teardown")

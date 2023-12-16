@@ -42,7 +42,7 @@ class CEvents(Enum):
     """User wishes to open the settings for a process. Callbacks to take ProcessName as argument"""
     CLOSE_SETTINGS = Literal["close_settings"]
     """User wishes to close the settings window for a process. Callbacks to take ProcessName as argument"""
-    SETTINGS_CONFIRMED = Literal["settings_confirmed"]
+    SETTINGS_MODIFIED = Literal["settings_confirmed"]
     """User has confirmed settings. Callbacks to take a dictionary containing the modified settings"""
     
     
@@ -54,9 +54,3 @@ class ProcessName(Enum):
     """Process that writes duties and levels to respective csv files during operation"""
     PID = "PID"
     """Process that runs the PID duty control feedback loop"""
-
-PROCESS_HAS_SETTINGS: dict[ProcessName, bool] = {
-    ProcessName.LEVEL: False,
-    ProcessName.DATA: True,
-    ProcessName.PID: True,
-}

@@ -165,7 +165,9 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
             self.sensed_event.set()
 
             if self.__logging_state.force_value():
-                self.log(data)
+                timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+                logging_data = [timestamp,*list(map(str,data))]
+                self.log(logging_data)
                 # timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
                 # data_str = [timestamp] + list(map(str,data))
                 # if self.__datafile is None:

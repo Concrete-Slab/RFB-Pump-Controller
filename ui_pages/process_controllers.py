@@ -1,9 +1,10 @@
 from abc import ABC,abstractmethod
 from .UIController import UIController
-from pump_control import Pump, PumpNames
+from pump_control import Pump
+from support_classes import PumpNames
 from enum import Enum
 from .PAGE_EVENTS import CEvents
-from .toplevel_boxes import LevelSelect,DataSettingsBox
+from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox
 from typing import Any
 
 
@@ -24,6 +25,10 @@ class BaseProcess(ABC):
         if cls.__instance is None:
             cls.__instance = cls()
         return cls.__instance
+    
+    def remove_context(self):
+        self._controller_context = None
+        self._pump_context = None
 
     @property
     @abstractmethod
@@ -76,8 +81,16 @@ class PIDProcess(BaseProcess):
         return True
     
     def open_settings(self):
-        pass
-        
+        if self._controller_context:
+            on_failure = lambda: self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.PID)
+            on_success = self.__on_settings_modified
+            self._controller_context._create_alert(PIDSettingsBox,on_success=on_success,on_failure=on_failure)
+    
+    def __on_settings_modified(self,modifications: dict[str,Any]):
+        if self._controller_context:
+            self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
+            self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.PID)
+    
 class LevelProcess(BaseProcess):
     @property
     def name(self) -> str:
@@ -121,12 +134,12 @@ class DataProcess(BaseProcess):
         return "Data Logging"
     def start(self):
         if self._pump_context and self._controller_context:
-            self._pump_context.logging_state.set_value(True)
+            self._pump_context.set_logging(True)
             self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.DATA)
     
     def close(self):
         if self._pump_context and self._controller_context:
-            self._pump_context.logging_state.set_value(False)
+            self._pump_context.set_logging(False)
             self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.DATA)
 
     @property
@@ -141,14 +154,14 @@ class DataProcess(BaseProcess):
 
     def __on_settings_modified(self,modifications: dict[str,Any]):
         if self._controller_context:
-            self._controller_context.notify_event(CEvents.SETTINGS_CONFIRMED,modifications)
+            self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
             self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.DATA)
         
 class ProcessName(Enum):
-    LEVEL = LevelProcess
+    LEVEL = LevelProcess.get_instance()
     """Process that reads the electrolyte reservoir levels"""
-    DATA = DataProcess
+    DATA = DataProcess.get_instance()
     """Process that writes duties and levels to respective csv files during operation"""
-    PID = PIDProcess
+    PID = PIDProcess.get_instance()
     """Process that runs the PID duty control feedback loop"""
 
