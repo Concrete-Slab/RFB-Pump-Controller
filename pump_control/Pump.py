@@ -6,6 +6,7 @@ from .async_levelsensor import LevelSensor, LevelBuffer, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
 from abc import ABC
+import copy
 
 class PumpState(ABC):
     pass
@@ -215,6 +216,47 @@ class Pump(AsyncRunner,Teardown):
         self.stop_polling()
         #TODO check race condition
         self.stop_event_loop()
+
+    async def emergency_stop(self):
+        LOW_PRIORITY_SPEED = 900
+        # find the pumps that are low priority
+        current_duties = self.__poller.state.force_value()
+        if current_duties is not None:
+            low_priority = []
+            high_priority = []
+            for pmp in current_duties.keys():
+                if current_duties[pmp] < LOW_PRIORITY_SPEED:
+                    low_priority.append(pmp)
+                else:
+                    high_priority.append(pmp)
+        else:
+            low_priority = [pmp.value for pmp in PumpNames]
+            high_priority = []
+        
+        # now stop these pumps with order determined by pid system importance
+        await self.__stop_with_hierarchy(high_priority)
+        await self.__stop_with_hierarchy(low_priority)
+
+    async def __stop_with_hierarchy(self,pumps: list[PumpNames]):
+        HIERARCHY = [Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP]
+        important_pumps = self.__pid.get_pumps()
+        high_priority: list[PumpNames] = []
+        low_priority = copy.copy(pumps)
+        for pump_role in HIERARCHY:
+            current_pump = important_pumps[pump_role]
+            if current_pump in pumps:
+                high_priority.append(current_pump)
+                low_priority.remove(current_pump)
+        
+        # first loop through the high priority pumps (in their order of hierarchy):
+        for hpp in high_priority:
+            await self.__serial_interface.write(GenericInterface.format_duty(hpp.value,0))
+        
+        # then do the low(er) priority pumps in any order
+        for lpp in low_priority:
+            await self.__serial_interface.write(GenericInterface.format_duty(lpp.value,0))
+        
+
 
     def _async_teardowns(self) -> Iterable[Coroutine[None, None, None]]:
         setout: set[Coroutine[None,None,None]] = set()
