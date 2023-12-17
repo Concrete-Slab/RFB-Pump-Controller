@@ -22,3 +22,8 @@ class SharedState(Generic[T]):
                 return val
             else:
                 return None
+            
+    def force_value(self):
+        with self.__lock:
+            return self.value
+

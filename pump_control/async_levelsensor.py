@@ -1,4 +1,4 @@
-from support_classes import Generator, SharedState, GeneratorException
+from support_classes import Generator, SharedState, GeneratorException, Loggable
 from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, CV2_KERNEL_SIZE, LEVEL_STABILISATION_PERIOD
 from .Buffer import Buffer
 from .timeavg import TimeAvg
@@ -20,33 +20,30 @@ Rect = tuple[int,int,int,int]
 
 LevelBuffer = Buffer[list[float]]
 
-class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
+class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
 
-    LOG_COLUMN_HEADERS = ["Timestamp","Elapsed Seconds","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
+    LOG_COLUMN_HEADERS = ["Timestamp","Elapsed Time","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
+    DEFAULT_DIRECTORY = "pumps/levels"
 
-    def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
-        super().__init__()
+    def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), absolute_logging_path: Path|None=None,**kwargs) -> None:
+        
 
-        self.__rel_level_directory = rel_level_directory.strip("\\").strip("/").replace("\\","/")
-        self.__LOG_PATH = Path(__file__).absolute().parent / self.__rel_level_directory
+        if absolute_logging_path is None:
+            absolute_logging_path = Path(__file__).absolute().parent / LevelSensor.DEFAULT_DIRECTORY
+        super().__init__(directory = absolute_logging_path,default_headers = LevelSensor.LOG_COLUMN_HEADERS)
         
         # shared states:
         # logging shared state: boolean that determines if data is saved
         self.__logging_state = logging_state
-        self.__logging = self.__logging_state.value
         # threading shared state: image that is updated with every new capture
         self.__display_state: SharedState[np.ndarray|None] = SharedState(initialValue=None)
         self.__display_flag = threading.Event()
         self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
 
-
         # video parameters to be set at a later time before generation
         self.__vc: cv2.VideoCapture|None = None
         self.__video_device: int|None = None   
         self.__vol_init: float|None = None
-
-        # logging filename to be set when the first data is to be logged
-        self.__datafile: str|None = None
 
         # public exposed property: signals that a level reading has been made
         # when set, it indicates that a reading has been made that has not been 
@@ -65,10 +62,6 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         # loop counter: used in calculation for offset period
         self.__i: int = 0
 
-        # used for performance learning: make sure state is sent roughly every 5 seconds
-        # TODO maybe improve this algorithm from just simple mean
-        self.__avg_perftime = 0.0
-
     def set_vision_parameters(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float):
         
         if any((video_device is None, rect1 is None, rect2 is None, rect_ref is None, vol_ref is None)):
@@ -82,10 +75,10 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
     async def _setup(self):
         if any((self.__video_device is None, self.__indexAn is None, self.__indexCath is None, self.__scale is None)):
             raise GeneratorException("Null values supplied to level sensor parameters")
+        self.new_file()
         self.__vc = cv2.VideoCapture(self.__video_device)
         self.__i = 0
         self.__initial_timestamp = time.time()
-        self.__logging = self.__logging_state.value
         self.__sleep_time = 0.5
         self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
         self.__display_thread.start()
@@ -112,7 +105,7 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         frame_cath = copy.copy(frame[self.__indexCath[0],self.__indexCath[1],:])
         frame_cath, vol_cath = _filter(frame_cath,self.__scale)
         # _draw_level(frame_cath,vol_cath/self.__scale)
- 
+
         # store CV results in internal buffer and calculate new average readings
         self.__reading_an.append([vol_an,t])
         self.__reading_cath.append([vol_cath,t])
@@ -125,8 +118,7 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
         net_vol_change = reading_calculation_an + reading_calculation_cath - self.__vol_init
         vol_diff = reading_calculation_an - reading_calculation_cath
-        
-        
+
         #---------------DISPLAY-------------------
         original_frame = copy.copy(frame)
         # draw the level lines on the original and filtered images
@@ -139,7 +131,13 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
         # write information text
-        cv2.putText(frame, f'Electrolyte Loss (mL):{0-net_vol_change}', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+        cv2.putText(frame, f'Electrolyte Loss:{0-net_vol_change}mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Anolyte: {reading_calculation_an}mL', (10,70), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Catholyte: {reading_calculation_cath}mL', (10,90), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Diff: {vol_diff}mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
         cv2.putText(frame, f'Anolyte: {reading_calculation_an}mL', (20,50), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
@@ -156,7 +154,6 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
         #--------------SAVE---------------
         # update the logging state
-        self.__logging = self.__logging_state.value
         elapsed_seconds = t - self.__initial_timestamp
         # reading is now finished, increment reading counter and record performance time
         end_time = time.perf_counter()
@@ -174,17 +171,15 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
             # additional asyncio event set for pid await line
             self.sensed_event.set()
 
-            if self.__logging:
+            if self.__logging_state.force_value():
                 timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                data_str = [timestamp] + list(map(str,data))
-                if self.__datafile is None:
-                    self.__datafile = timestamp
-                log_data(self.__LOG_PATH,self.__datafile,data_str,column_headers=self.LOG_COLUMN_HEADERS)
-
-    def __update_perftime(self,newperftime) -> float:
-        newavg = (self.__avg_perftime*self.__i + newperftime) / (self.__i+1)
-        self.__avg_perftime = newavg
-        return newavg
+                logging_data = [timestamp,*list(map(str,data))]
+                self.log(logging_data)
+                # timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+                # data_str = [timestamp] + list(map(str,data))
+                # if self.__datafile is None:
+                #     self.__datafile = timestamp
+                # log_data(self.__LOG_PATH,self.__datafile,data_str,column_headers=self.LOG_COLUMN_HEADERS)
 
     def teardown(self):
         self.__datafile = None
@@ -242,7 +237,7 @@ def _continuous_display(imgstate: SharedState[np.ndarray|None],run_event: thread
         run_event.clear()
         cv2.destroyWindow("Camera Feed")
 
-class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
+class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
 
     def __init__(self,sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
@@ -270,6 +265,8 @@ class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         self.__buffer.add(nextdiff)
         self.state.set_value((self.__buffer,None))
         self.sensed_event.set()
+        if self.__logging_state.force_value():
+            self.log(nextdiff)
 
     def teardown(self):
         self.f.close()

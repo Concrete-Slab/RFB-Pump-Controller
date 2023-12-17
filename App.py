@@ -1,9 +1,7 @@
 import customtkinter as ctk
 from ui_root import UIRoot, page
 from ui_pages import *
-from pump_control import Pump, PumpNames
-from support_classes import TDExecutor
-
+from pump_control import Pump
 
 
 class App(UIRoot):

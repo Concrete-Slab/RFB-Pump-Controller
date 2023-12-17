@@ -1,10 +1,9 @@
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
-import customtkinter as ctk
 from threading import Event
-from queue import Queue
-from typing import TypeVar, Callable, Any, Dict
+from typing import TypeVar, Callable, Any, Dict, ParamSpec
 import warnings
 from support_classes import SharedState
+from .toplevel_boxes import AlertBox
 
 
 class UIController:
@@ -25,8 +24,9 @@ class UIController:
     def _add_state(self, state: SharedState[T], callback: StateFunction[T]):
         return self.__root.register_state(state,callback)
     
-    def _create_alert(self,toplevel: Callable[...,ctk.CTkToplevel],*args,**kwargs):
-        alert = toplevel(self.__root,self,*args,**kwargs)
+    P = ParamSpec("P")
+    def _create_alert(self,toplevel: Callable[...,AlertBox[P]],*args, on_success: Callable[P,None]|None = None,on_failure: Callable[[None],None]|None = None,**kwargs):
+        alert = toplevel(self.__root,*args,on_success = on_success,on_failure = on_failure,**kwargs)
         alert.focus_set()
         return alert
     

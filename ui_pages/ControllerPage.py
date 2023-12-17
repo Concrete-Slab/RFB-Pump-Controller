@@ -1,9 +1,11 @@
+from typing import Any
 import customtkinter as ctk
 from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme
 from .UIController import UIController
-from .PAGE_EVENTS import CEvents,ProcessName
-from pump_control import PumpNames,PID_PUMPS
-
+from .PAGE_EVENTS import CEvents
+from .process_controllers import ProcessName
+from support_classes import read_settings, Settings, PumpNames, PID_PUMPS
+import copy
 
 
 class ControllerPage(ctk.CTkFrame):
@@ -12,9 +14,11 @@ class ControllerPage(ctk.CTkFrame):
         super().__init__(parent, width, height, corner_radius, border_width, bg_color, fg_color, border_color, background_corner_colors, overwrite_preferred_drawing_method, **kwargs)
         
         self.UIcontroller = controller
-        
+
+        self.auto_pumps: dict[Settings,PumpNames] = read_settings(Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP)
+
         self.pump_map: dict[PumpNames, PumpWidget] = {}
-        nColumns = 5
+        nColumns = len(ProcessName) + 2
         nInitialRows = 2
         self.columnconfigure(list(range(1,nColumns-1)),weight=1,uniform="col")
         self.columnconfigure([0,nColumns-1],weight=1)
@@ -27,26 +31,28 @@ class ControllerPage(ctk.CTkFrame):
             i += 1
         self.rowconfigure([0]+list(range(nInitialRows,i)),weight=1,uniform="row")
 
-        
         self.status_label = ctk.CTkLabel(self,
                                          text = "Ready",
                                          text_color=ApplicationTheme.WHITE,
                                          font=ctk.CTkFont(family=ApplicationTheme.FONT, 
                                                           size=ApplicationTheme.STATUS_FONT_SIZE
                                                           ),
-                                         
                                         )
         self.status_label.grid(row=1,column=0,columnspan=nColumns,padx=10,pady=5)
 
-        self.pid_state = ctk.IntVar(value=0)
-        pid_box = BoolSwitch(self,self.pid_state,"PID", state_callback = lambda state: self.__switch_pressed(state,ProcessName.PID))
-        self.level_state = ctk.IntVar(value=0)
-        level_box = BoolSwitch(self,self.level_state,"Level Sensing", state_callback = lambda state: self.__switch_pressed(state,ProcessName.LEVEL))
-        level_box.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
-        pid_box.grid(row=0,column=3,padx=10,pady=5,sticky="nsew")
-        self.data_state = ctk.IntVar(value=0)
-        data_box = BoolSwitch(self,self.data_state,"Data Logging", state_callback = lambda state: self.__switch_pressed(state,ProcessName.DATA))
-        data_box.grid(row=0,column=2,padx=10,pady=5,sticky="nsew")
+        self.process_states: dict[ProcessName,ctk.IntVar] = {}
+        self.process_boxes: dict[ProcessName,BoolSwitch] = {}
+
+        for j,process in enumerate(ProcessName):
+            process_state_var = ctk.IntVar(value=0)
+            if process.value.get_instance().has_settings:
+                settings_fun = lambda process_name = process: self.UIcontroller.notify_event(CEvents.OPEN_SETTINGS,process_name)
+            else:
+                settings_fun = None
+            process_box = BoolSwitch(self,process_state_var,str(process.value.get_instance().name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
+            process_box.grid(row=0,column=j+1,padx=10,pady=5,sticky="nsew")
+            self.process_states[process] = process_state_var
+            self.process_boxes[process] = process_box
 
         # add remaining controller listeners
 
@@ -56,6 +62,8 @@ class ControllerPage(ctk.CTkFrame):
         self.UIcontroller.add_listener(CEvents.PROCESS_CLOSED, lambda prefix: self.__set_switch_state(prefix,SwitchState.OFF))
         self.UIcontroller.add_listener(CEvents.AUTO_DUTY_SET,self.__auto_duty_set)
         self.UIcontroller.add_listener(CEvents.AUTO_SPEED_SET,self.__auto_speed_set)
+        self.UIcontroller.add_listener(CEvents.CLOSE_SETTINGS,lambda process_name: self.process_boxes[process_name].set_settings_button_active(True))
+        self.UIcontroller.add_listener(CEvents.SETTINGS_MODIFIED,self.__maybe_change_pumps)
 
     def __auto_duty_set(self,identifier: PumpNames,duty: int):
         self.pump_map[identifier].dutyVar.set(duty)
@@ -73,20 +81,13 @@ class ControllerPage(ctk.CTkFrame):
             self.UIcontroller.notify_event(CEvents.CLOSE_PROCESS,switch_prefix)
 
     def __set_switch_state(self,switch_prefix: ProcessName,state: SwitchState):
-        match switch_prefix:
-            case ProcessName.PID:
-                self.pid_state.set(int(state.value))
-                if state == SwitchState.ON:
-                    self.__set_pid_colors(ApplicationTheme.AUTO_PUMP_COLOR)
-                elif state == SwitchState.OFF:
-                    self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
-            case ProcessName.LEVEL:
-                self.level_state.set(int(state.value))
-            case ProcessName.DATA:
-                self.data_state.set(int(state.value))
-            case _:
-                raise ValueError(f"Device prefix \"{switch_prefix}\" not accounted for")
-            
+        self.process_states[switch_prefix].set(int(state.value))
+        if switch_prefix == ProcessName.PID:
+            if state == SwitchState.ON:
+                self.__set_pid_colors(ApplicationTheme.AUTO_PUMP_COLOR)
+            elif state == SwitchState.OFF:
+                self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
+
     def __on_error(self,error):
         self.status_label.configure(text = f"Error: {str(error)}",text_color=ApplicationTheme.ERROR_COLOR)
 
@@ -94,9 +95,21 @@ class ControllerPage(ctk.CTkFrame):
         self.status_label.configure(text="Ready",text_color=ApplicationTheme.WHITE)
             
     def __set_pid_colors(self,new_color):
-        for pmp in PID_PUMPS.values():
+        for pmp in self.auto_pumps.values():
             if pmp is not None:
                 self.pump_map[pmp].set_bgcolor(new_color)
+
+    def __maybe_change_pumps(self,modified_settings: dict[Settings, Any]):
+        pumps_changed = False
+        new_auto_pumps = copy.copy(self.auto_pumps)
+        for setting in PID_PUMPS:
+            if setting in set(modified_settings.keys()):
+                pumps_changed = True
+                new_auto_pumps[setting] = modified_settings[setting]
+        if pumps_changed:
+            self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
+            self.auto_pumps = new_auto_pumps
+            
 
     def destroy(self):
         # self.controller.close()

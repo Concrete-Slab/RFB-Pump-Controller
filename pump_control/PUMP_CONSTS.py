@@ -33,6 +33,25 @@ class PumpNames(Enum):
     E = "e"
     F = "f"
 
+    @staticmethod
+    def set_pid_pumps(new_dict):
+        #TODO some sort of input validation
+        __pid_pumps = new_dict
+
+    @staticmethod
+    def get_pid_pumps():
+        return __pid_pumps
+
+    def is_pid(self):
+        return self in __pid_pumps.values()
+    
+def to_pumpnames(pmp: str|None) -> PumpNames|None:
+            try:
+                return PumpNames(pmp)
+            except:
+                return None
+
+__pid_pumps: dict[str,PumpNames|None] = {}
 PID_PUMPS: dict[str,PumpNames|None] = {"anolyte": PumpNames.E,
                                        "catholyte": PumpNames.F,
                                        "refill anolyte": None,
