@@ -82,8 +82,8 @@ class PIDRunner(Generator[Duties]):
             control = round(self.__pid(error))
 
             # Assign new duties
-            (flowRateRefillAnolyte,flowRateRefillCatholyte,refill_duties) = self.__handle_refill(init_volume,volume_change)
-            (flowRateAn,flowRateCath,pid_duties) = self.__handle_pid(control)
+            (flowRateRefillAnolyte,flowRateRefillCatholyte,refill_duties) = await self.__handle_refill(init_volume,volume_change)
+            (flowRateAn,flowRateCath,pid_duties) = await self.__handle_pid(control)
 
             duties: Duties = {**pid_duties,**refill_duties}
 
@@ -134,12 +134,12 @@ class PIDRunner(Generator[Duties]):
         anolyte_flowrate = 0
         catholyte_flowrate = 0
 
-        anolyte_write = self.__write_nullsafe(PID_PUMPS["anolyte"],flowRateAn)
+        anolyte_write = await self.__write_nullsafe(PID_PUMPS["anolyte"],flowRateAn)
         if anolyte_write:
             anolyte_flowrate = flowRateAn
             duties = {**duties,PID_PUMPS["anolyte"]: anolyte_flowrate}
 
-        catholyte_write = self.__write_nullsafe(PID_PUMPS["catholyte"],flowRateCath)
+        catholyte_write = await self.__write_nullsafe(PID_PUMPS["catholyte"],flowRateCath)
         if anolyte_write:
             catholyte_flowrate = flowRateCath
             duties = {**duties,PID_PUMPS["catholyte"]: catholyte_flowrate}

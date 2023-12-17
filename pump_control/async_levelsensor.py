@@ -22,7 +22,7 @@ LevelBuffer = Buffer[list[float]]
 
 class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
 
-    LOG_COLUMN_HEADERS = ["Timestamp","Elapsed Time","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
+    LOG_COLUMN_HEADERS = ["Timestamp","Elapsed Seconds","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
 
     def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
@@ -139,8 +139,15 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]]):
         frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
         # write information text
-        cv2.putText(frame, f'Electrolyte Loss (mL):{0-net_vol_change}\nAnolyte: {reading_calculation_an}mL\nCatholyte: {reading_calculation_cath}mL\nDiff: {vol_diff}m', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+        cv2.putText(frame, f'Electrolyte Loss (mL):{0-net_vol_change}', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Anolyte: {reading_calculation_an}mL', (20,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Catholyte: {reading_calculation_cath}mL', (30,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Diff: {vol_diff}m', (40,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+
         # concatenate original and filtered images
         displayimg = np.concatenate((frame,original_frame),axis=1)
         # send to display thread
