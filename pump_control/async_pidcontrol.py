@@ -41,6 +41,9 @@ class PIDRunner(Generator[Duties],Loggable):
             Settings.ANOLYTE_REFILL_PUMP: anolyte_refill_pump,
             Settings.CATHOLYTE_REFILL_PUMP: catholyte_refill_pump
         }
+
+        self.__prev_duties = {pmp:0 for pmp in PumpNames}
+
         self.__refill_time = refill_time
         self.__refill_duty = refill_duty
         self.__refill_percentage_trigger = refill_percentage
@@ -135,7 +138,7 @@ class PIDRunner(Generator[Duties],Loggable):
                 self.__pid_pumps[pmpsetting] = new_pump
 
     async def __handle_refill(self,initial_volume,volume_change) -> tuple[int,int,Duties]:
-        percent_change = 0-volume_change/initial_volume
+        percent_change = 0-volume_change/initial_volume * 100
         if initial_volume>0 and percent_change>self.__refill_percentage_trigger and self.__refill_start_time is None:
             anolyte_write = await self.__write_nullsafe(self.__pid_pumps[Settings.ANOLYTE_REFILL_PUMP],self.__refill_duty)
             catholyte_write = await self.__write_nullsafe(self.__pid_pumps[Settings.CATHOLYTE_REFILL_PUMP],self.__refill_duty)
@@ -181,9 +184,9 @@ class PIDRunner(Generator[Duties],Loggable):
         return (anolyte_flowrate,catholyte_flowrate,duties)
     
     async def __write_nullsafe(self,pmp: PumpNames,duty: int) -> bool:
-        if pmp is not None:
+        if self.__prev_duties[pmp] != duty:
             pmpstr = pmp.value
             await self.__serial_interface.write(GenericInterface.format_duty(pmpstr,duty))
+            self.__prev_duties[pmp] = duty
             await asyncio.sleep(1.5)
-            return True
-        return False
+        return (pmp is not None)
