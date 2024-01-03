@@ -1,4 +1,6 @@
 from typing import Any
+
+from support_classes.settings_interface import Settings
 from .UIController import UIController
 from ui_root import UIRoot
 from pump_control import Pump, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
@@ -84,6 +86,6 @@ class ControllerPageController(UIController):
             self.notify_event(CEvents.AUTO_SPEED_SET,pmp,new_dict[pmp])
 
     # SETTINGS MODIFICATION LOGIC
-    def __handle_settings_changed(self, modifications: dict[str, Any]):
+    def __handle_settings_changed(self, modifications: dict[Settings, Any]):
         self.pump.change_settings(modifications)
         
