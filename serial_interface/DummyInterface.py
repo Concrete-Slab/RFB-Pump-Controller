@@ -17,7 +17,7 @@ class DummyInterface(GenericInterface):
     async def readbuffer(self) -> str:
         await asyncio.sleep(1)
         out = [""]*6
-        for i,duty in enumerate(self.applied_duties.values):
+        for i,duty in enumerate(self.applied_duties.values()):
             out[i] = str(int(duty/255*12300) + random.random()*100)
         outstr = ",".join(out)
         return outstr
