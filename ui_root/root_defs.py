@@ -41,13 +41,13 @@ class UIRoot(ctk.CTk):
             self.__events = {**self.__events,
                             event: [new_tuple]
                             }
-        def __unregister_single():
+        def __unregister_single(ev = event, tp = new_tuple):
             try:
-                self.__events[event].remove(new_tuple)
-                if len(self.__events[event]) == 0:
-                    self.__events.pop(event)
+                self.__events[ev].remove(tp)
+                if len(self.__events[ev]) == 0:
+                    self.__events.pop(ev)
             except (IndexError,ValueError):
-                warnings.warn(str(event.__hash__()) + " event has already been removed")
+                warnings.warn(str(ev.__hash__()) + " event has already been removed")
         return __unregister_single
 
     def register_state(self,state: SharedState[T], callback: StateFunction[T], single_call = False) -> CallbackRemover:
@@ -58,13 +58,13 @@ class UIRoot(ctk.CTk):
             self.__states = {**self.__states,
                             state: [new_tuple]
                             }
-        def __unregister_single():
+        def __unregister_single(st = state, tp = new_tuple):
             try:
-                self.__states[state].remove(new_tuple)
-                if len(self.__states[state]) == 0:
-                    self.__states.pop(state)
-            except (ValueError, IndexError):
-                warnings.warn(str(state.__hash__()) + " queue has already been removed")
+                self.__states[st].remove(tp)
+                if len(self.__states[st]) == 0:
+                    self.__states.pop(st)
+            except (ValueError, IndexError,KeyError):
+                warnings.warn(str(st.__hash__()) + " queue has already been removed")
         return __unregister_single
 
     # KEY PART: modify the event loop of tkinter to perform polling and event callbacks before updating the UI

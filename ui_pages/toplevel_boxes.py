@@ -55,7 +55,7 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
 
     def __init__(self, master: ctk.CTk, *args, on_success: Callable[..., None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
-        
+        self.title(self.ALERT_TITLE)
         ## READ THE CURRENT SETTINGS
         # with open("settings.json","r") as f:
         #     settings: dict[str,Any] = dict(json.load(f))
@@ -146,9 +146,12 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
 
 class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
 
+    ALERT_TITLE = "PID Settings"
+
     def __init__(self, master: ctk.CTk, *args, on_success: Callable[..., None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
-        
+        self.title(self.ALERT_TITLE)
+
         self.__default_options = ["None"]
         for pmpname in PumpNames:
             self.__default_options.append(pmpname.value.lower())
