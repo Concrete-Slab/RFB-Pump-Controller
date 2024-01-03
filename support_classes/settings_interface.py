@@ -20,16 +20,28 @@ class Settings(Enum):
     LEVEL_DIRECTORY = "level_directory"
     PID_DIRECTORY = "pid_directory"
     SPEED_DIRECTORY = "speed_directory"
-    DEFAULT_VIDEO_DEVICE = "default_video_device"
     ANOLYTE_PUMP = "anolyte_pump"
     CATHOLYTE_PUMP = "catholyte_pump"
     ANOLYTE_REFILL_PUMP = "anolyte_refill_pump"
     CATHOLYTE_REFILL_PUMP = "catholyte_refill_pump"
     REFILL_TIME = "refill_time"
+    """Seconds for which the main reservoirs are topped up after a refill event is triggered"""
     REFILL_DUTY = "refill_duty"
+    """Duty applied to the refill pump when PID controller detects low levels"""
     REFILL_PERCENTAGE_TRIGGER = "refill_percentage_trigger"
+    """Percent loss of solvent that will trigger the refill system"""
     BASE_CONTROL_DUTY = "base_control_duty"
-
+    """Duty applied to pumps when controller input is zero"""
+    VIDEO_DEVICE = "video_device"
+    """Integer that selects the video device to be used with cv2"""
+    AUTO_EXPOSURE = "auto_exposure"
+    """Sets automatic camera exposure on or off"""
+    EXPOSURE_TIME = "exposure_time"
+    """Sets the exposure time for the camera if auto exposure is off"""
+    SENSING_PERIOD = "sensing_period"
+    """Sets the time in seconds between images of the reservoirs"""
+    AVERAGE_WINDOW_WIDTH = "average_window_width"
+    """Sets the number of seconds over which level readings are averaged"""
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -39,7 +51,7 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.LEVEL_DIRECTORY: (__thispath / "pumps/levels").as_posix(),
     Settings.PID_DIRECTORY: (__thispath / "pumps/duties").as_posix(),
     Settings.SPEED_DIRECTORY: (__thispath / "pumps/speeds").as_posix(),
-    Settings.DEFAULT_VIDEO_DEVICE: 0,
+    Settings.VIDEO_DEVICE: 0,
     Settings.ANOLYTE_PUMP: None,
     Settings.CATHOLYTE_PUMP: None,
     Settings.ANOLYTE_REFILL_PUMP: None,
@@ -48,12 +60,17 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.REFILL_DUTY: 10,
     Settings.REFILL_PERCENTAGE_TRIGGER: 20,
     Settings.BASE_CONTROL_DUTY: 92,
+    Settings.AUTO_EXPOSURE: True,
+    Settings.EXPOSURE_TIME: 1000,
+    Settings.SENSING_PERIOD: 5.0,
+    Settings.AVERAGE_WINDOW_WIDTH: 18*60.0
 }
 
 PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER])
 LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
 LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
+LEVEL_SETTINGS = set([Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH,Settings.EXPOSURE_TIME])
 
 def read_settings(*keys: Settings) -> dict[Settings,Any]:
     all_settings = __open_settings_filesafe()
@@ -62,6 +79,7 @@ def read_settings(*keys: Settings) -> dict[Settings,Any]:
         keys = DEFAULT_SETTINGS.keys()
     out: dict[Settings,Any] = {}
     for key in keys:
+        # TODO fix possible key error in logic
         if key in all_settings.keys():
             out = {**out,key:all_settings[key]}
         elif key in DEFAULT_SETTINGS.keys():
@@ -117,7 +135,6 @@ def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
         json.dump(final_settings,f)
     # return the modifications to settings
     return modifications
-
 
 def __open_settings_filesafe() -> dict[Settings,Any]:
     try:

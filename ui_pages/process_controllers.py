@@ -1,10 +1,10 @@
 from abc import ABC,abstractmethod
 from .UIController import UIController
 from pump_control import Pump
-from support_classes import PumpNames
+from support_classes import PumpNames, Settings
 from enum import Enum
 from .PAGE_EVENTS import CEvents
-from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox
+from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox,LevelSettingsBox
 from typing import Any
 
 
@@ -86,7 +86,7 @@ class PIDProcess(BaseProcess):
             on_success = self.__on_settings_modified
             self._controller_context._create_alert(PIDSettingsBox,on_success=on_success,on_failure=on_failure)
     
-    def __on_settings_modified(self,modifications: dict[str,Any]):
+    def __on_settings_modified(self,modifications: dict[Settings,Any]):
         if self._controller_context:
             self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
             self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.PID)
@@ -126,7 +126,15 @@ class LevelProcess(BaseProcess):
         return False
     
     def open_settings(self):
-        pass
+        if self._controller_context:
+            on_success = self.__on_settings_modified
+            on_failure = self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.LEVEL)
+            box = self._controller_context._create_alert(LevelSettingsBox)
+
+    def __on_settings_modified(self, modifications: dict[Settings,Any]):
+        if self._controller_context:
+            self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
+            self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.LEVEL)
 
 class DataProcess(BaseProcess):
     @property
@@ -152,7 +160,7 @@ class DataProcess(BaseProcess):
             on_failure = lambda: self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.DATA)
             self._controller_context._create_alert(DataSettingsBox,on_success=on_success,on_failure=on_failure)
 
-    def __on_settings_modified(self,modifications: dict[str,Any]):
+    def __on_settings_modified(self,modifications: dict[Settings,Any]):
         if self._controller_context:
             self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
             self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.DATA)
