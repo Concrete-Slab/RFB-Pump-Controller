@@ -1,6 +1,5 @@
 from typing import Optional, Tuple, Union, TypeVar, Callable, Dict
 import customtkinter as ctk
-from queue import Queue
 from typing import Callable,Any
 from support_classes import SharedState
 import warnings
