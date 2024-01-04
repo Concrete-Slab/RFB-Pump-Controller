@@ -1,18 +1,21 @@
 import customtkinter as ctk
-from customtkinter.windows import CTk
 import cv2
-from support_classes import open_cv2_window, capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS
-from typing import Generic,ParamSpec,Callable,Any
+from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
+from support_classes import capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState
+from typing import Generic,ParamSpec,Callable,Any,TypeVar
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
+import threading
 import copy
-import json
+import pynput.keyboard as pyin
+import time
 
 SuccessSignature = ParamSpec("SuccessSignature")
 
 class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
-    def __init__(self, master: ctk.CTk, *args, on_success: Callable[SuccessSignature,None] | None = None, on_failure: Callable[[None],None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
+    def __init__(self, master: UIRoot, *args, on_success: Callable[SuccessSignature,None] | None = None, on_failure: Callable[[None],None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master,*args, fg_color=fg_color, **kwargs)
+        self.__root = master
         self.__on_failure = on_failure
         self.__on_success = on_success
         self.__event_listeners: dict[str, list[Callable[...,None]]] = {}
@@ -44,6 +47,13 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
         if event in self.__event_listeners.keys():
             for cb in self.__event_listeners[event]:
                 cb(*args,**kwargs)
+
+    def _add_event(self, event: threading.Event, callback: EventFunction,single_call=False) -> CallbackRemover:
+        return self.__root.register_event(event,callback,single_call=single_call)
+    
+    T = TypeVar("T")
+    def _add_state(self, state: SharedState[T], callback: StateFunction[T]):
+        return self.__root.register_state(state,callback)
 
     def bring_forward(self):
         self.attributes('-topmost', 1)
@@ -272,7 +282,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
         else:
             for i in range(0,len(valid_input)):
                 entry_bgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if valid_input[i] else ApplicationTheme.ERROR_COLOR
-                self.__refill_entries[i].configure(fg_color=entry_bgcolor)
+                self.__refill_entries[i].configure(border_color=entry_bgcolor)
 
 def _json2str(json_result: PumpNames|None) -> str:
     if json_result is None:
@@ -324,27 +334,22 @@ def _validate_percent(percentstr: str, allow_empty = True):
 
 Rect = tuple[int,int,int,int] 
 
-class LevelSelect(AlertBox[int,Rect,Rect,Rect,float]):
+class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
 
     ALERT_TITLE = "Level sensing prompt"
-
-    VALID_REGIONS = "valid_regions"
-    INVALID_REGIONS = "invalid_regions"
-    
 
     #TODO this code is perhaps rather rushed...
 
     def __init__(self, master: ctk.CTk,*args, on_success: Callable[[int,Rect,Rect,Rect,float],None] | None = None, on_failure: Callable[[None],None] | None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master,*args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.title(self.ALERT_TITLE)
-        with open("settings.json","r") as f:
-            settings = json.load(f)
-        try:
-            default_video_device = settings["default_video_device"]
-            if default_video_device is not None and isinstance(default_video_device,int) and default_video_device>=0:
-                self.default_device = default_video_device
-        except:
-            self.default_device = 0
+        settings = read_settings(Settings.VIDEO_DEVICE)
+        self.__video_device = settings[Settings.VIDEO_DEVICE]
+        
+        self.__cv2_exit_condition = threading.Event()
+        self.__unregister_exit_condition: Callable[[None],None]|None = None
+        self.__cv2_shared_state: SharedState[tuple[Rect,Rect,Rect]] = SharedState()
+        self.__cv2_thread: threading.Thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state])
 
         self.__r1: tuple[int,int,int,int]|None = None
         self.__r2: tuple[int,int,int,int]|None = None
@@ -355,116 +360,123 @@ class LevelSelect(AlertBox[int,Rect,Rect,Rect,float]):
         self.volume_frame = ctk.CTkFrame(self)
         
         # set up initial page
+        instructions_label = ctk.CTkLabel(self.initial_frame,
+                                          text = """Finish the selection process by pressing ESC!\nSelect a region and then press SPACE or ENTER\nCancel the selection process by pressing c""")
+        self.lblvar = ctk.StringVar(value="Select the anolyte tank, catholyte tank, and finally a reference height")
+        self.msg_lbl = ctk.CTkLabel(self.initial_frame, textvariable = self.lblvar)
 
-        self.lblvar = ctk.StringVar(value="Select video device (positive int): ")
-        lbl = ctk.CTkLabel(self.initial_frame, textvariable = self.lblvar)
-        self.current_device = ctk.StringVar(value=str(default_video_device))
-        device_selector = ctk.CTkEntry(self.initial_frame, textvariable=self.current_device, validate='key', validatecommand = (self.register(_validate_device),"%P"))
-        device_selector.bind('<Return>', command=lambda event: self.__confirm_device())
-        device_selector.bind('<FocusOut>', command=lambda event: self.focus_set(), add="+")
-
-        self.confirm_button = ctk.CTkButton(self.initial_frame,text="Confirm",command=self.__confirm_device)
+        self.confirm_button = ctk.CTkButton(self.initial_frame,text="Confirm",command=self.__confirm_initial)
         
-
-        lbl.grid(row=0,column=0,columnspan=2,padx=10,pady=10,sticky="ns")
-        device_selector.grid(row=1,column=0,padx=10,pady=10,sticky="nsew")
-        self.confirm_button.grid(row=1,column=1,padx=10,pady=10,sticky="nsew")
+        instructions_label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
+        self.msg_lbl.grid(row=1,column=0,columnspan=2,padx=10,pady=10,sticky="ns")
+        self.confirm_button.grid(row=2,column=1,padx=10,pady=10,sticky="nsw")
 
         # volume select page
-
-        # self.initvar = ctk.StringVar(value="0")
         self.refvar = ctk.StringVar(value="0")
-        # initlabel = ctk.CTkLabel(self.volume_frame,text="Enter combined initial volume:")
         reflabel = ctk.CTkLabel(self.volume_frame,text="Enter reference volume:")
-        # initentry = ctk.CTkEntry(self.volume_frame,textvariable=self.initvar,validate="key",validatecommand=(self.register(_validate_volume),"%P"))
-        # initentry.bind('<Return>', command=lambda event: self.__confirm_volumes())
-        # initentry.bind('<Tab>', command=lambda event: refentry.focus_set())
-        # initentry.bind('<FocusOut>', command=lambda event: self.focus_set(), add="+")
         self.__refentry = ctk.CTkEntry(self.volume_frame,textvariable=self.refvar,validate="key",validatecommand=(self.register(_validate_volume),"%P"))
         self.__refentry.bind('<Return>', command=lambda event: self.__confirm_volumes())
-        # refentry.bind('<Tab>', command=lambda event: initentry.focus_set())
         self.__refentry.bind('<FocusOut>', command=lambda event: self.focus_set(), add="+")
-        # ml1 = ctk.CTkLabel(self.volume_frame,text="mL")
         ml2 = ctk.CTkLabel(self.volume_frame,text="mL")
         button_frame = ctk.CTkFrame(self.volume_frame)
         volbutton = ctk.CTkButton(button_frame,text="Confirm",command=self.__confirm_volumes)
-        redobutton = ctk.CTkButton(button_frame,text="Retake",command=self.__select_device)
+        redobutton = ctk.CTkButton(button_frame,text="Retake",command=self.__initial_screen)
         button_frame.columnconfigure([0,1],weight=1,uniform="col")
         volbutton.grid(row=0,column=1,padx=10,pady=10,sticky="ns")
         redobutton.grid(row=0,column=0,padx=10,pady=10,sticky="ns")
 
-        # initlabel.grid(row=0,column=0,padx=10,pady=10,sticky="w")
-        # initentry.grid(row=0,column=1,padx=10,pady=10,sticky="ns")
-        # ml1.grid(row=0,column=2,padx=10,pady=10,sticky="w")
         reflabel.grid(row=1,column=0,padx=10,pady=10,sticky="w")
         self.__refentry.grid(row=1,column=1,padx=10,pady=10,sticky="ns")
         ml2.grid(row=1,column=2,padx=10,pady=10,sticky="w")
         button_frame.grid(row=3,column=0,columnspan=3,sticky="nsew")
 
         # Change to initial_frame
-        self.__select_device()
-        
-        
+        self.__initial_screen()
 
-
-    def __confirm_device(self):
+    def __confirm_initial(self):
         if self.confirm_button._state == ctk.NORMAL:
-            device_num = self.current_device.get()
-            if device_num == "":
-                self.lblvar.set("Please enter a valid device number")
-            else:
-                self.confirm_button.configure(state=ctk.DISABLED)
-                # self.UIcontroller.notify_event("launch_cv2",int(self.current_device.get()))
-                self.__launch_cv2(int(device_num))
+            self.confirm_button.configure(state=ctk.DISABLED)
+            self.__cv2_thread.start()
+            self.__unregister_exit_condition = self._add_event(self.__cv2_exit_condition,self.__check_regions)
 
-    def __bad_device(self):
-            self.lblvar.set("Choose a different device")
+    def __bad_regions(self):
+            self.lblvar.set("Please select exactly 3 regions")
+            self.msg_lbl.configure(text_color=ApplicationTheme.ERROR_COLOR)
             self.confirm_button.configure(state=ctk.NORMAL)
 
-    def __select_device(self):
+    def __initial_screen(self):
         self.__r1, self.__r2, self.__h = None,None,None
         self.volume_frame.pack_forget()
         self.confirm_button.configure(state=ctk.NORMAL)
+        self.msg_lbl.configure(text_color=ApplicationTheme.WHITE)
         self.initial_frame.pack()
+
+    def __check_regions(self):
+        self.__teardown_thread()
+        rects = self.__cv2_shared_state.get_value()
+        if rects is not None and len(rects) == 3:
+            self.__r1 = rects[0]
+            self.__r2 = rects[1]
+            self.__h = rects[2]
+            self.__select_volumes()
+        else:
+            self.__bad_regions()
 
     def __select_volumes(self):
         self.initial_frame.pack_forget()
         self.volume_frame.pack()
         self.__refentry.focus_set()
 
-    def __bad_regions(self):
-        self.lblvar.set("Please select 3 regions")
-        self.confirm_button.configure(state=ctk.NORMAL)
+    def __teardown_thread(self):
+        if self.__unregister_exit_condition:
+            self.__unregister_exit_condition()
+            self.__unregister_exit_condition = None
+        if self.__cv2_thread.is_alive():
+            self.__cv2_exit_condition.set()
+            # mock a press of the ESC button to trick the cv2 thread into continuing past the selectROIs() block
+            keyboard = pyin.Controller()
+            keyboard.press(pyin.Key.esc)
+            time.sleep(0.1)
+            keyboard.release(pyin.Key.esc)
+            try:
+                cv2.waitKey(1)
+                cv2.destroyWindow("Select Regions")
+            except:
+                pass
+            self.__cv2_thread.join()
+            self.__cv2_exit_condition.clear()
+        self.__cv2_thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state])
 
     def __confirm_volumes(self):
-        # init_vol_str = self.initvar.get()
         ref_vol_str = self.refvar.get()
-        # if init_vol_str != "" and ref_vol_str not in  "" and float(init_vol_str)>0 and float(ref_vol_str)>0:
         if ref_vol_str != "" and float(ref_vol_str)>0:
+            self.__teardown_thread()
+            self.destroy_successfully(self.__r1,self.__r2,self.__h,float(ref_vol_str))
             
-            # self.UIcontroller.notify_event(CEvents.LEVEL_DATA_ACQUIRED,self.default_device,self.__r1,self.__r2,self.__h,float(ref_vol_str))
-            self.destroy_successfully(self.default_device,self.__r1,self.__r2,self.__h,float(ref_vol_str))
-
-    def __launch_cv2(self,device: int):
-        try:
-            cap = capture(device)
-            self.default_device = device
-            with open_cv2_window("rectfeed") as wind:
-                try:
-                    self.__r1, self.__r2, self.__h = cv2.selectROIs(wind,cap)
-                except ValueError:
-                    self.__r1, self.__r2, self.__h = None, None, None
-            if any((self.__r1 is None, self.__r2 is None, self.__h is None)):
-                # TODO change these back to parameterless
-                self.__bad_regions()
-            else:
-                self.__select_volumes()
-        except CaptureException:
-            self.__bad_device()
-
     def destroy(self):
-        cv2.destroyAllWindows()
         super().destroy()
+        self.__teardown_thread()
+
+def _select_regions(device_number: int, exit_condition: threading.Event, shared_state: SharedState[tuple[Rect,Rect,Rect]]):
+    try:
+        img = capture(device_number)
+    except CaptureException:
+        exit_condition.set()
+    if exit_condition.is_set():
+        return
+    cv2.namedWindow("Select Regions")
+    if exit_condition.is_set():
+        cv2.destroyAllWindows()
+        return
+    try:
+        rects = cv2.selectROIs("Select Regions",img)
+        if len(rects) != 3:
+            raise Exception("Exactly 3 regions were not selected")
+        shared_state.set_value(rects)
+    finally:
+        exit_condition.set()
+        cv2.destroyAllWindows()
+        return
 
 def _validate_device(p: str, allow_empty = True):
     try:
@@ -491,10 +503,11 @@ def _validate_volume(p: str):
 class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
     __NUM_CAMERA_SETTINGS = 3
+    ALERT_TITLE = "Level Sensing Settings"
 
     def __init__(self, master: ctk.CTk, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
-        
+        self.title(self.ALERT_TITLE)
         all_settings = read_settings(*LEVEL_SETTINGS)
         prev_vd: int = all_settings[Settings.VIDEO_DEVICE]
         prev_auto_exposure: bool = all_settings[Settings.AUTO_EXPOSURE]
@@ -532,7 +545,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
             
         
         self.vd_var,vd_entry = make_and_grid(camera_frame,"Camera Device Number",str(prev_vd),_validate_device,1)
-        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= make_entry(camera_frame,"Manual Exposure Time",str(prev_exposure_time),_validate_time,units="ms")
+        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= make_entry(camera_frame,"Manual Exposure Time",str(prev_exposure_time),_validate_exposure)
         self.sense_period_var,sense_period_entry = make_and_grid(cv_frame,"Image Capture Period",str(prev_sensing_period),_validate_time_float,1,units="s")
         self.average_var,average_entry = make_and_grid(cv_frame,"Moving Average Period",str(prev_average_period),_validate_time_float,2,units = "s")
 
@@ -542,6 +555,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         exposure_method_button.set("Auto" if prev_auto_exposure else "Manual")
         exposure_method_label.grid(row=self.__NUM_CAMERA_SETTINGS-1,column=0,padx=10,pady=5,sticky="nsew")
         exposure_method_button.grid(row=self.__NUM_CAMERA_SETTINGS-1,column=1,padx=10,pady=5,sticky="nsew")
+        self.__exposure_method_changed()
 
 
         self.permanent_vars = [self.vd_var,self.sense_period_var,self.average_var]
@@ -569,7 +583,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         valid_input = [_validate_device(vd_str,allow_empty=False),_validate_time_float(sense_period_str,allow_empty=False),_validate_time_float(average_period_str,allow_empty=False)]
         entries = self.permanent_entries
         if not exposure_is_auto:
-            valid_input.append(_validate_time(exposure_time_str))
+            valid_input.append(_validate_exposure(exposure_time_str,allow_empty=False))
             entries.append(self.exposure_time_entry)
         
         if all(valid_input):
@@ -588,7 +602,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
             for i in range(0,len(valid_input)):
                 # go through all values: any that are not valid will have their entry set to red
                 entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if valid_input[i] else ApplicationTheme.ERROR_COLOR
-                entries[i].configure(fg_color=entry_fgcolor)
+                entries[i].configure(border_color=entry_fgcolor)
 
 
 
@@ -597,14 +611,11 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         if new_method == "Auto":
             self.exposure_time_label.grid_remove()
             self.exposure_time_entryframe.grid_remove()
-            self.exposure_time_entry.configure(fg_color=ApplicationTheme.MANUAL_PUMP_COLOR)
+            self.exposure_time_entry.configure(border_color=ApplicationTheme.MANUAL_PUMP_COLOR)
         else:
             exposure_settings_row = self.__NUM_CAMERA_SETTINGS
             self.exposure_time_label.grid(row=exposure_settings_row,column=0,padx=10,pady=5,sticky="nsew")
             self.exposure_time_entryframe.grid(row=exposure_settings_row,column=1,padx=10,pady=5,sticky="nsew")
-    
-
-
 
 def _validate_time_float(timestr: str, allow_empty = True):
     if timestr == "":
@@ -616,4 +627,12 @@ def _validate_time_float(timestr: str, allow_empty = True):
         return False
     except:
         return False
-        
+    
+def _validate_exposure(exp: str, allow_empty: bool = True) -> bool:
+    if exp in ("","-",".") and allow_empty:
+        return True
+    try:
+        int(exp)
+        return True
+    except:
+        return False

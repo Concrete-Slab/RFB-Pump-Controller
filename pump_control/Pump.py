@@ -131,11 +131,12 @@ class Pump(AsyncRunner,Teardown):
     def stop_pid(self):
         self.__pid.stop()
 
-    def start_levels(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[LevelBuffer]]:
+    def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[LevelBuffer]]:
         try:
+            video_device = read_settings(Settings.VIDEO_DEVICE)[Settings.VIDEO_DEVICE]
             self.__level.set_vision_parameters(video_device, rect1, rect2, rect_ref, vol_ref)
         except ValueError as e:
-            print()
+            print(e)
             self.state.set_value(ErrorState(LevelException(str(e))))
         
         self.run_async(self.__level.generate(), callback = self.__levels_check_error)
@@ -218,6 +219,7 @@ class Pump(AsyncRunner,Teardown):
         self.stop_event_loop()
 
     async def emergency_stop(self):
+        """Stop all pumps. Since there is a mandatory delay between writes to the serial port, it is important to stop the pumps in the optimal order to minimise damage to the flow system. Pumps with high speeds are prioritised first. Within the high speed pumps, any pumps responsible for refilling the electrolyte reservoirs are handled first, followed by any electrolyte pumps. The low speed pumps are then handled in the same hierarchy"""
         LOW_PRIORITY_SPEED = 900
         # find the pumps that are low priority
         current_duties = self.__poller.state.force_value()
@@ -255,8 +257,6 @@ class Pump(AsyncRunner,Teardown):
         # then do the low(er) priority pumps in any order
         for lpp in low_priority:
             await self.__serial_interface.write(GenericInterface.format_duty(lpp.value,0))
-        
-
 
     def _async_teardowns(self) -> Iterable[Coroutine[None, None, None]]:
         setout: set[Coroutine[None,None,None]] = set()
@@ -277,7 +277,3 @@ def is_duty(duty: int):
     if duty >= 0 and duty <= 255:
         return True
     return False
-        
-
-
-

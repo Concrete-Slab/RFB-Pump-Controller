@@ -102,10 +102,10 @@ class LevelProcess(BaseProcess):
             on_success = self.__send_level_config
             box = self._controller_context._create_alert(LevelSelect,on_success=on_success,on_failure=on_failure)
     
-    def __send_level_config(self,device_number: int, r1: tuple[int,int,int,int], r2: tuple[int,int,int,int], h: tuple[int,int,int,int], ref_vol: float):
+    def __send_level_config(self, r1: tuple[int,int,int,int], r2: tuple[int,int,int,int], h: tuple[int,int,int,int], ref_vol: float):
         if self._pump_context and self._controller_context:
 
-            (state_running,state_levels) = self._pump_context.start_levels(device_number,r1,r2,h,ref_vol)
+            (state_running,state_levels) = self._pump_context.start_levels(r1,r2,h,ref_vol)
             
             if len(self._removal_callbacks) == 0:
                 self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
@@ -123,7 +123,7 @@ class LevelProcess(BaseProcess):
     
     @property
     def has_settings(self) -> bool:
-        return False
+        return True
     
     def open_settings(self):
         if self._controller_context:

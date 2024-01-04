@@ -45,6 +45,10 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
         self.__video_device: int|None = None   
         self.__vol_init: float|None = None
 
+        self.__indexAn: tuple[slice|slice]|None = None
+        self.__indexCath: tuple[slice|slice]|None = None
+        self.__scale: float|None = None
+
         # public exposed property: signals that a level reading has been made
         # when set, it indicates that a reading has been made that has not been 
         self.sensed_event = sensed_event
@@ -71,6 +75,10 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
         self.__indexCath = _get_indices(rect2)
         self.__scale = vol_ref/rect_ref[3]
         pass
+
+    def is_ready(self) -> bool:
+        return all((self.__video_device is not None,self.__indexAn is not None, self.__indexCath is not None, self.__scale is not None))
+
 
     async def _setup(self):
         if any((self.__video_device is None, self.__indexAn is None, self.__indexCath is None, self.__scale is None)):
