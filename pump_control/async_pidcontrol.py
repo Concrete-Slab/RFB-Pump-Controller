@@ -184,7 +184,7 @@ class PIDRunner(Generator[Duties],Loggable):
         return (anolyte_flowrate,catholyte_flowrate,duties)
     
     async def __write_nullsafe(self,pmp: PumpNames,duty: int) -> bool:
-        if self.__prev_duties[pmp] != duty:
+        if (pmp is not None) and (self.__prev_duties[pmp] != duty):
             pmpstr = pmp.value
             await self.__serial_interface.write(GenericInterface.format_duty(pmpstr,duty))
             self.__prev_duties[pmp] = duty
