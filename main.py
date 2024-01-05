@@ -1,8 +1,8 @@
 from App import App
-from support_classes import TDExecutor
+from support_classes.Teardown import TDExecutor
 import sys
 
-if __name__ == '__main__':
+def main():
     if sys.gettrace():
         # run in debug mode
         app = App(debug=True)
@@ -10,3 +10,6 @@ if __name__ == '__main__':
         app = App()
     app.mainloop()
     TDExecutor.execute()
+
+if __name__ == '__main__':
+    main()
