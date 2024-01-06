@@ -27,7 +27,7 @@ class DummyInterface(GenericInterface):
         
         try:
             pmp = PumpNames(val[1])
-            duty = int(val[3])
+            duty = int(val[3:-2])
             self.applied_duties[pmp] = duty
         except:
             pass

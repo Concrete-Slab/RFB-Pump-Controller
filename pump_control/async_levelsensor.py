@@ -84,6 +84,8 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
             self.__sense_period = new_parameters[Settings.SENSING_PERIOD]
         if Settings.AVERAGE_WINDOW_WIDTH in new_parameters.keys():
             self.__average_window_length = new_parameters[Settings.AVERAGE_WINDOW_WIDTH]
+            old_buffer = self.__readings_buffer
+            self.__readings_buffer = TimeAvg.from_old(old_buffer,self.__average_window_length)
         if Settings.LEVEL_STABILISATION_PERIOD in new_parameters.keys():
             self.__stabilisation_period = new_parameters[Settings.LEVEL_STABILISATION_PERIOD]
 
@@ -107,6 +109,7 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         self.__i = 0
         self.__initial_timestamp = time.time()
         self.__vol_init = None
+        self.__readings_buffer = TimeAvg(self.__average_window_length,data_size=4)
         # set an initial sleep time. this is recalculated at each iteration of the loop
         self.__sleep_time = 0.5
         self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))

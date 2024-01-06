@@ -59,7 +59,6 @@ def __setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str
     actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
     return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
 
-
 def __setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> Capture:
     actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
     lst_devices = PygameCapture.get_cameras(backend=actual_backend)
@@ -95,9 +94,10 @@ class CV2Capture(Capture):
         is_capture = False
         if self.__instance:
             is_capture, img = self.__instance.read()
-        if not is_capture:
-            raise CaptureException("Image not retrieved from cv2.VideoCapture.read()")
-        return img
+            if not is_capture:
+                raise CaptureException("Image not retrieved from cv2.VideoCapture.read()")
+            return img
+        raise CaptureException("Camera has not been opened")
 
     @classmethod
     def get_cameras(cls,**kwargs) -> list[str]|None:
@@ -132,7 +132,6 @@ def _backend_to_cv2(be: CaptureBackend) -> int:
             return cv2.CAP_QT
         case _:
             return CaptureBackend.ANY
-        
 
 class PygameCapture(Capture):
 

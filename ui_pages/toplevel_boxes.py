@@ -2,6 +2,8 @@ import customtkinter as ctk
 import cv2
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
 from support_classes import capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture
+#TODO make independent of model class
+from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from typing import Generic,ParamSpec,Callable,Any,TypeVar
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
@@ -544,9 +546,9 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         interface_dropdown.grid(row=1,column=1,padx=10,pady=5,sticky="nsew")
         self.interface_var.trace_add(self.__interface_changed)
 
-        self.sense_period_var,sense_period_entry = _make_and_grid(cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),_validate_time_float,1,units="s",map_fun=float)
-        self.average_var,average_entry = _make_and_grid(cv_frame,"Moving Average Period",Settings.AVERAGE_WINDOW_WIDTH,str(prev_average_period),_validate_time_float,2,units = "s",map_fun=float)
-        self.stabilisation_var, stabilisation_entry = _make_and_grid(cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD,str(prev_stabilisation_period),_validate_time_float,3,units="s",map_fun=float)
+        self.sense_period_var,sense_period_entry = self._make_and_grid(cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),_validate_time_float,1,units="s",map_fun=float)
+        self.average_var,average_entry = self._make_and_grid(cv_frame,"Moving Average Period",Settings.AVERAGE_WINDOW_WIDTH,str(prev_average_period),_validate_time_float,2,units = "s",map_fun=float)
+        self.stabilisation_var, stabilisation_entry = self._make_and_grid(cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD,str(prev_stabilisation_period),_validate_time_float,3,units="s",map_fun=float)
 
 
         #----------CV2 Settings-------------
@@ -567,10 +569,10 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         self.cv2_backend_var.widget = cv2_backend_menu
 
         # exposure time entry box
-        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= _make_entry(camera_frame,"Manual Exposure Time",Settings.EXPOSURE_TIME,str(prev_exposure_time),_validate_exposure)
+        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= self._make_entry(camera_frame,"Manual Exposure Time",Settings.EXPOSURE_TIME,str(prev_exposure_time),_validate_exposure)
         
         # video device number entry box
-        vd_label,self.vd_var,vd_entry,vd_entryframe = _make_entry(camera_frame,"Camera Device Number",Settings.VIDEO_DEVICE,str(prev_vd),_validate_device,map_fun=int)
+        vd_label,self.vd_var,vd_entry,vd_entryframe = self._make_entry(camera_frame,"Camera Device Number",Settings.VIDEO_DEVICE,str(prev_vd),_validate_device,map_fun=int)
 
         self.cv2_widgets: WidgetGridInfo = [(vd_label,self.__NUM_CAMERA_SETTINGS,0),
                             (vd_entryframe,self.__NUM_CAMERA_SETTINGS,1),
@@ -618,7 +620,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
         self.visible_vars: list[_SettingVariable] = []
 
-        self.columnconfigure([0,1],weight=1,uniform="rootcol")
+        # self.columnconfigure([0,1],weight=1,uniform="rootcol")
         camera_frame.grid(row=0,column=0,padx=10,pady=5,sticky="nsew")
         cv_frame.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
 
@@ -711,6 +713,28 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
             self.exposure_time_label.grid(row=exposure_settings_row,column=0,padx=10,pady=5,sticky="nsew")
             self.exposure_time_entryframe.grid(row=exposure_settings_row,column=1,padx=10,pady=5,sticky="nsew")
 
+    def _make_entry(self,frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],units: str|None = None,map_fun: Callable[[str],Any]|None = None) -> tuple[ctk.CTkLabel,"_SettingVariable",ctk.CTkEntry,ctk.CTkFrame]:
+        lbl = ctk.CTkLabel(frame,text=name)
+        ctkvar = ctk.StringVar(value=initial_value)
+        var = _SettingVariable(ctkvar,setting,validator=lambda val: entry_validator(val,allow_empty=False),map_fun=map_fun)
+        entryparent = ctk.CTkFrame(frame)
+        entry = ctk.CTkEntry(entryparent,textvariable=ctkvar, validate='key', validatecommand = (frame.register(entry_validator),"%P"))
+        entry.bind("<Return>",lambda *args: self.__confirm_selections())
+        var.widget = entry
+        if units:
+            entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
+            unit_label = ctk.CTkLabel(entryparent,text=units)
+            unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
+        else:
+            entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
+        return lbl,var,entry,entryparent
+            
+    def _make_and_grid(self,frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],grid_row: int,units: str|None = None, map_fun: Callable[[str],Any]|None = None) -> tuple["_SettingVariable",ctk.CTkEntry]:
+        lbl,var,entry,entryframe = self._make_entry(frame,name,setting,initial_value,entry_validator,units=units,map_fun=map_fun)
+        lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
+        entryframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
+        return var,entry
+
 T = TypeVar("T")
 class _SettingVariable(Generic[T]):
     def __init__(self,var: ctk.StringVar,setting: Settings,validator: Callable[[T],bool] = lambda _: True, map_fun: Callable[[str],T]|None = None) -> None:
@@ -736,26 +760,7 @@ class _SettingVariable(Generic[T]):
     def setting(self) -> Settings:
         return self.__setting
 
-def _make_entry(frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],units: str|None = None,map_fun: Callable[[str],Any]|None = None) -> tuple[ctk.CTkLabel,_SettingVariable,ctk.CTkEntry,ctk.CTkFrame]:
-    lbl = ctk.CTkLabel(frame,text=name)
-    ctkvar = ctk.StringVar(value=initial_value)
-    var = _SettingVariable(ctkvar,setting,validator=lambda val: entry_validator(val,allow_empty=False),map_fun=map_fun)
-    entryparent = ctk.CTkFrame(frame)
-    entry = ctk.CTkEntry(entryparent,textvariable=ctkvar, validate='key', validatecommand = (frame.register(entry_validator),"%P"))
-    var.widget = entry
-    if units:
-        entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
-        unit_label = ctk.CTkLabel(entryparent,text=units)
-        unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
-    else:
-        entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
-    return lbl,var,entry,entryparent
-          
-def _make_and_grid(frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],grid_row: int,units: str|None = None, map_fun: Callable[[str],Any]|None = None) -> tuple[_SettingVariable,ctk.CTkEntry]:
-    lbl,var,entry,entryframe = _make_entry(frame,name,setting,initial_value,entry_validator,units=units,map_fun=map_fun)
-    lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
-    entryframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
-    return var,entry
+
 
 def _validate_time_float(timestr: str, allow_empty = True):
     if timestr == "":
