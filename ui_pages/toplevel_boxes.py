@@ -1,7 +1,7 @@
 import customtkinter as ctk
 import cv2
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
-from support_classes import capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState
+from support_classes import capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture
 from typing import Generic,ParamSpec,Callable,Any,TypeVar
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
@@ -343,8 +343,7 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
     def __init__(self, master: ctk.CTk,*args, on_success: Callable[[int,Rect,Rect,Rect,float],None] | None = None, on_failure: Callable[[None],None] | None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master,*args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.title(self.ALERT_TITLE)
-        settings = read_settings(Settings.VIDEO_DEVICE)
-        self.__video_device = settings[Settings.VIDEO_DEVICE]
+        self.__video_device = Capture.from_settings()
         
         self.__cv2_exit_condition = threading.Event()
         self.__unregister_exit_condition: Callable[[None],None]|None = None
@@ -457,9 +456,9 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         super().destroy()
         self.__teardown_thread()
 
-def _select_regions(device_number: int, exit_condition: threading.Event, shared_state: SharedState[tuple[Rect,Rect,Rect]]):
+def _select_regions(capture_device, exit_condition: threading.Event, shared_state: SharedState[tuple[Rect,Rect,Rect]]):
     try:
-        img = capture(device_number)
+        img = capture(capture_device)
     except CaptureException:
         exit_condition.set()
     if exit_condition.is_set():
@@ -499,21 +498,27 @@ def _validate_volume(p: str):
         if p == "":
             return True
         return False
-    
+
+WidgetGridInfo = tuple[ctk.CTkBaseClass,int,int]
+
 class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
-    __NUM_CAMERA_SETTINGS = 3
+
+    __NUM_CAMERA_SETTINGS = 2
     ALERT_TITLE = "Level Sensing Settings"
 
     def __init__(self, master: ctk.CTk, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.title(self.ALERT_TITLE)
         all_settings = read_settings(*LEVEL_SETTINGS)
+        prev_interface: str = all_settings[Settings.CAMERA_INTERFACE_MODULE]
         prev_vd: int = all_settings[Settings.VIDEO_DEVICE]
         prev_auto_exposure: bool = all_settings[Settings.AUTO_EXPOSURE]
         prev_exposure_time: int = all_settings[Settings.EXPOSURE_TIME]
         prev_sensing_period: float = all_settings[Settings.SENSING_PERIOD]
         prev_average_period: float = all_settings[Settings.AVERAGE_WINDOW_WIDTH]
+        prev_stabilisation_period = all_settings[Settings.LEVEL_STABILISATION_PERIOD]
+        prev_backend: CaptureBackend = all_settings[Settings.CAMERA_BACKEND]
 
         # frame for holding camera-related settings
         camera_frame = ctk.CTkFrame(self)
@@ -524,42 +529,91 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         cv_title_label = ctk.CTkLabel(cv_frame,text="Computer Vision Settings")
         cv_title_label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
 
-        def make_entry(frame: ctk.CTkFrame,name: str,initial_value: str,entry_validator: Callable[...,bool],units: str|None = None, grid_row: int|None = None) -> tuple[ctk.CTkLabel,ctk.StringVar,ctk.CTkEntry,ctk.CTkFrame]|ctk.StringVar:
-            lbl = ctk.CTkLabel(frame,text=name)
-            var = ctk.StringVar(value=initial_value)
-            entryparent = ctk.CTkFrame(frame)
-            entry = ctk.CTkEntry(entryparent,textvariable=var, validate='key', validatecommand = (self.register(entry_validator),"%P"))
-            if units:
-                entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
-                unit_label = ctk.CTkLabel(entryparent,text=units)
-                unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
-            else:
-                entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
-            return lbl,var,entry,entryparent
+        P = TypeVar("P")
         
-        def make_and_grid(frame: ctk.CTkFrame,name: str,initial_value: str,entry_validator: Callable[...,bool],grid_row: int,units: str|None = None) -> tuple[ctk.StringVar,ctk.CTkEntry]:
-            lbl,var,entry,entryframe = make_entry(frame,name,initial_value,entry_validator,units=units)
-            lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
-            entryframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
-            return var,entry
-            
         
-        self.vd_var,vd_entry = make_and_grid(camera_frame,"Camera Device Number",str(prev_vd),_validate_device,1)
-        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= make_entry(camera_frame,"Manual Exposure Time",str(prev_exposure_time),_validate_exposure)
-        self.sense_period_var,sense_period_entry = make_and_grid(cv_frame,"Image Capture Period",str(prev_sensing_period),_validate_time_float,1,units="s")
-        self.average_var,average_entry = make_and_grid(cv_frame,"Moving Average Period",str(prev_average_period),_validate_time_float,2,units = "s")
+        interface_ctkvar = ctk.StringVar(value=prev_interface)
+        self.interface_var = _SettingVariable[str](interface_ctkvar, Settings.CAMERA_INTERFACE_MODULE)
+        interface_lbl = ctk.CTkLabel(camera_frame,text="Camera Module Interface")
+        interface_dropdown = ctk.CTkOptionMenu(camera_frame,variable=interface_ctkvar,values=Capture.SUPPORTED_INTERFACES())
+        self.interface_var.widget = interface_dropdown
+        interface_lbl.grid(row=1,column=0,padx=10,pady=5,sticky="nsew")
+        interface_dropdown.grid(row=1,column=1,padx=10,pady=5,sticky="nsew")
+        self.interface_var.trace_add(self.__interface_changed)
 
+        self.sense_period_var,sense_period_entry = _make_and_grid(cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),_validate_time_float,1,units="s",map_fun=float)
+        self.average_var,average_entry = _make_and_grid(cv_frame,"Moving Average Period",Settings.AVERAGE_WINDOW_WIDTH,str(prev_average_period),_validate_time_float,2,units = "s",map_fun=float)
+        self.stabilisation_var, stabilisation_entry = _make_and_grid(cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD,str(prev_stabilisation_period),_validate_time_float,3,units="s",map_fun=float)
+
+
+        #----------CV2 Settings-------------
+        # exposure selection auto/manual switch
         exposure_method_label = ctk.CTkLabel(camera_frame,text="Camera Exposure Determination")
-        self.exposure_method_var = ctk.StringVar()
-        exposure_method_button = ctk.CTkSegmentedButton(camera_frame,values=["Auto","Manual"],variable=self.exposure_method_var,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,command=self.__exposure_method_changed)
-        exposure_method_button.set("Auto" if prev_auto_exposure else "Manual")
-        exposure_method_label.grid(row=self.__NUM_CAMERA_SETTINGS-1,column=0,padx=10,pady=5,sticky="nsew")
-        exposure_method_button.grid(row=self.__NUM_CAMERA_SETTINGS-1,column=1,padx=10,pady=5,sticky="nsew")
-        self.__exposure_method_changed()
+        exposure_method_ctkvar = ctk.StringVar(value="Auto" if prev_auto_exposure else "Manual")
+        self.exposure_method_var = _SettingVariable(exposure_method_ctkvar,Settings.AUTO_EXPOSURE,map_fun= lambda str_in: str_in=="Auto")
+        exposure_method_button = ctk.CTkSegmentedButton(camera_frame,values=["Auto","Manual"],variable=exposure_method_ctkvar,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,command=self.__exposure_method_changed)
+        self.exposure_method_var.widget = exposure_method_button
 
+        # backend selection dropdown menu
+        cv2_backend_label = ctk.CTkLabel(camera_frame,text="Camera Backend Provider")
+        cv2_available_backends = [be.value for be in CV2Capture.get_backends()]
+        cv2_display_backend = prev_backend.value if prev_backend.value in cv2_available_backends else CaptureBackend.ANY.value
+        cv2_backend_ctkvar = ctk.StringVar(value = cv2_display_backend)
+        self.cv2_backend_var = _SettingVariable(cv2_backend_ctkvar,Settings.CAMERA_BACKEND,map_fun=lambda be: CaptureBackend(be))
+        cv2_backend_menu = ctk.CTkOptionMenu(camera_frame,variable=cv2_backend_ctkvar,values=cv2_available_backends)
+        self.cv2_backend_var.widget = cv2_backend_menu
 
-        self.permanent_vars = [self.vd_var,self.sense_period_var,self.average_var]
-        self.permanent_entries = [vd_entry,sense_period_entry,average_entry]
+        # exposure time entry box
+        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= _make_entry(camera_frame,"Manual Exposure Time",Settings.EXPOSURE_TIME,str(prev_exposure_time),_validate_exposure)
+        
+        # video device number entry box
+        vd_label,self.vd_var,vd_entry,vd_entryframe = _make_entry(camera_frame,"Camera Device Number",Settings.VIDEO_DEVICE,str(prev_vd),_validate_device,map_fun=int)
+
+        self.cv2_widgets: WidgetGridInfo = [(vd_label,self.__NUM_CAMERA_SETTINGS,0),
+                            (vd_entryframe,self.__NUM_CAMERA_SETTINGS,1),
+                            (cv2_backend_label,self.__NUM_CAMERA_SETTINGS+1,0),
+                            (cv2_backend_menu,self.__NUM_CAMERA_SETTINGS+1,1),
+                            (exposure_method_label,self.__NUM_CAMERA_SETTINGS+2,0),
+                            (exposure_method_button,self.__NUM_CAMERA_SETTINGS+2,1),
+                            (self.exposure_time_label,self.__NUM_CAMERA_SETTINGS+3,0),
+                            (self.exposure_time_entryframe,self.__NUM_CAMERA_SETTINGS+3,1)]
+        self.cv2_vars = [self.vd_var,self.cv2_backend_var,self.exposure_method_var,self.exposure_time_var]
+
+        #-----------Pygame Settings--------------
+        # backend selection dropdown menu
+        pygame_backend_label = ctk.CTkLabel(camera_frame,text="Camera Backend Provider")
+        pygame_available_backends = [be.value for be in PygameCapture.get_backends()]
+        pygame_display_backend = prev_backend.value if prev_backend.value in pygame_available_backends else CaptureBackend.ANY.value
+        pygame_backend_ctkvar = ctk.StringVar(value=pygame_display_backend)
+        self.pygame_backend_var = _SettingVariable(pygame_backend_ctkvar,Settings.CAMERA_BACKEND,map_fun=lambda str_in: CaptureBackend(str_in))
+        pygame_backend_menu = ctk.CTkOptionMenu(camera_frame,variable=pygame_backend_ctkvar,values = pygame_available_backends)
+        self.pygame_backend_var.widget = pygame_backend_menu
+        self.pygame_backend_var.trace_add(self.__maybe_refresh_pygame_cameras)
+
+        # camera selection dropdown menu
+        pgvd_label = ctk.CTkLabel(camera_frame,text="Camera Device")
+        current_list = PygameCapture.get_cameras(backend=pygame_display_backend)
+        selected_device = current_list[prev_vd] if prev_vd < len(current_list) else current_list[0]
+        pgvd_ctkvar = ctk.StringVar(value=selected_device)
+        self.pgvd_var = _SettingVariable(pgvd_ctkvar,Settings.VIDEO_DEVICE,map_fun=self.__cast_pygame_camera,validator=self.__validate_pygame_camera)
+        pgvd_frame = ctk.CTkFrame(camera_frame)
+        self.pgvd_menu = ctk.CTkOptionMenu(pgvd_frame,variable=pgvd_ctkvar,values=current_list)
+        pygame_refresh = ctk.CTkButton(pgvd_frame,text="Refresh",command=self.__refresh_pygame_cameras)
+        self.pgvd_menu.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+        pygame_refresh.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
+        self.pgvd_var.widget = self.pgvd_menu
+
+        self.pygame_widgets: WidgetGridInfo = [(pygame_backend_label,self.__NUM_CAMERA_SETTINGS,0),
+                                               (pygame_backend_menu,self.__NUM_CAMERA_SETTINGS,1),
+                                               (pgvd_label,self.__NUM_CAMERA_SETTINGS+1,0),
+                                               (pgvd_frame,self.__NUM_CAMERA_SETTINGS+1,1)]
+        self.pygame_vars = [self.pygame_backend_var,self.pgvd_var]
+
+        self.permanent_vars = [self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
+
+        self.widget_dict: dict[str,tuple[WidgetGridInfo,list[_SettingVariable]]] = {"OpenCV": (self.cv2_widgets,self.cv2_vars),"Pygame": (self.pygame_widgets,self.pygame_vars)}
+
+        self.visible_vars: list[_SettingVariable] = []
 
         self.columnconfigure([0,1],weight=1,uniform="rootcol")
         camera_frame.grid(row=0,column=0,padx=10,pady=5,sticky="nsew")
@@ -569,53 +623,134 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         cancel_button = ctk.CTkButton(self,text="Cancel",command=self.destroy)
         confirm_button.grid(row=1,column=1,padx=10,pady=5,sticky="nse")
         cancel_button.grid(row=1,column=0,padx=10,pady=5,sticky="nsw")
+        self.__interface_changed()
+
+    def __validate_pygame_camera(self,selected_camera):
+        selected_backend = CaptureBackend(self.pygame_backend_var.get())
+        return selected_camera in PygameCapture.get_cameras(backend=selected_backend)
+    def __cast_pygame_camera(self,selected_camera):
+        selected_backend = CaptureBackend(self.pygame_backend_var.get())
+        current_device_list = PygameCapture.get_cameras(backend=selected_backend)
+        if selected_camera in current_device_list:
+            return current_device_list.index(selected_camera)
+        return DEFAULT_SETTINGS[Settings.VIDEO_DEVICE]
+    def __maybe_refresh_pygame_cameras(self,*args):
+        selected_backend = CaptureBackend(self.pygame_backend_var.get())
+        selected_camera = self.pgvd_var.get()
+        try:
+            new_cameras = PygameCapture.get_cameras(backend=selected_backend)
+            self.pgvd_menu.configure(values=new_cameras)
+            if selected_camera not in new_cameras:
+                self.pgvd_var.set(new_cameras[0])
+            
+        except RuntimeError:
+            self.pygame_backend_var.set(CaptureBackend.ANY.value)
+            self.__maybe_refresh_pygame_cameras()
+    def __refresh_pygame_cameras(self):
+        selected_backend = CaptureBackend(self.pygame_backend_var.get())
+        try:
+            self.pgvd_menu.configure(values=PygameCapture.get_cameras(force_newlist=True,backend=selected_backend))
+        except RuntimeError:
+            self.pygame_backend_var.set(CaptureBackend.ANY.value)
+        
+    def __interface_changed(self,*args):
+        new_interface = self.interface_var.get()
+        widgets_of_interest = self.widget_dict[new_interface][0]
+        vars_of_interest = self.widget_dict[new_interface][1]
+
+        for interface in self.widget_dict.keys():
+            if interface != new_interface:
+                old_widgets_info = self.widget_dict[interface][0]
+                for widgetgridinfo in old_widgets_info:
+                    curr_widget: ctk.CTkBaseClass = widgetgridinfo[0]
+                    curr_widget.grid_remove()
+        for newgridinfo in widgets_of_interest:
+            curr_widget: ctk.CTkBaseClass = newgridinfo[0]
+            curr_row: int = newgridinfo[1]
+            curr_column: int = newgridinfo[2]
+            curr_widget.grid(row=curr_row,column=curr_column,padx=10,pady=5,sticky="nsew")
+        self.visible_vars = [*self.permanent_vars,*vars_of_interest]
+        if new_interface == "OpenCV":
+            self.__exposure_method_changed()
 
     def __confirm_selections(self):
-        vd_str = self.vd_var.get()
-        exposure_time_str = self.exposure_time_var.get()
-        exposure_method = self.exposure_method_var.get()
-        exposure_is_auto = exposure_method == "Auto"
-        sense_period_str = self.sense_period_var.get()
-        average_period_str = self.average_var.get()
 
-        # if exposure is auto, we need not validate the exposure time
-        # note that the order of valid_input corresponds to the order of self.permanent_entries
-        valid_input = [_validate_device(vd_str,allow_empty=False),_validate_time_float(sense_period_str,allow_empty=False),_validate_time_float(average_period_str,allow_empty=False)]
-        entries = self.permanent_entries
-        if not exposure_is_auto:
-            valid_input.append(_validate_exposure(exposure_time_str,allow_empty=False))
-            entries.append(self.exposure_time_entry)
-        
-        if all(valid_input):
-            dict_out = {
-                Settings.VIDEO_DEVICE: int(vd_str),
-                Settings.AUTO_EXPOSURE: exposure_is_auto,
-                Settings.SENSING_PERIOD: float(sense_period_str),
-                Settings.AVERAGE_WINDOW_WIDTH: float(average_period_str),
-            }
-            # we need not save the exposure time unless the exposure method is manual
-            if not exposure_is_auto:
-                dict_out = {**dict_out, Settings.EXPOSURE_TIME: int(exposure_time_str)}
-            modifications = modify_settings(dict_out)
+        all_valid = True
+        for var in self.visible_vars:
+            if not var.is_valid():
+                all_valid = False
+                break
+        if all_valid:
+            all_settings = {var.setting:var.get_mapped() for var in self.visible_vars}
+            modifications = modify_settings(all_settings)
             self.destroy_successfully(modifications)
-        else:
-            for i in range(0,len(valid_input)):
-                # go through all values: any that are not valid will have their entry set to red
-                entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if valid_input[i] else ApplicationTheme.ERROR_COLOR
-                entries[i].configure(border_color=entry_fgcolor)
+            return
 
-
+        for var in self.visible_vars:
+            if isinstance(var.widget,ctk.CTkEntry):
+                entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
+                var.widget.configure(border_color=entry_fgcolor)
 
     def __exposure_method_changed(self,*args):
         new_method = self.exposure_method_var.get()
         if new_method == "Auto":
             self.exposure_time_label.grid_remove()
             self.exposure_time_entryframe.grid_remove()
+            try:
+                self.visible_vars.remove(self.exposure_time_var)
+            except Exception as e:
+                print(e)
             self.exposure_time_entry.configure(border_color=ApplicationTheme.MANUAL_PUMP_COLOR)
         else:
-            exposure_settings_row = self.__NUM_CAMERA_SETTINGS
+            exposure_settings_row = self.__NUM_CAMERA_SETTINGS+3
             self.exposure_time_label.grid(row=exposure_settings_row,column=0,padx=10,pady=5,sticky="nsew")
             self.exposure_time_entryframe.grid(row=exposure_settings_row,column=1,padx=10,pady=5,sticky="nsew")
+
+T = TypeVar("T")
+class _SettingVariable(Generic[T]):
+    def __init__(self,var: ctk.StringVar,setting: Settings,validator: Callable[[T],bool] = lambda _: True, map_fun: Callable[[str],T]|None = None) -> None:
+        self.__var = var
+        self.__setting = setting
+        self.fun = map_fun
+        self.__validator = validator
+        self.widget: ctk.CTkBaseClass|None = None
+    def get(self) -> str:
+        return self.__var.get()
+    def set(self,value: str) -> None:
+        self.__var.set(value)
+    def get_mapped(self) -> T:
+        if self.fun:
+            return self.fun(self.get())
+        return self.get()
+    def is_valid(self) -> bool:
+        val = self.get()
+        return self.__validator(val)
+    def trace_add(self,callback: Callable[[str,str,str],None]):
+        self.__var.trace_add("write",callback)
+    @property
+    def setting(self) -> Settings:
+        return self.__setting
+
+def _make_entry(frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],units: str|None = None,map_fun: Callable[[str],Any]|None = None) -> tuple[ctk.CTkLabel,_SettingVariable,ctk.CTkEntry,ctk.CTkFrame]:
+    lbl = ctk.CTkLabel(frame,text=name)
+    ctkvar = ctk.StringVar(value=initial_value)
+    var = _SettingVariable(ctkvar,setting,validator=lambda val: entry_validator(val,allow_empty=False),map_fun=map_fun)
+    entryparent = ctk.CTkFrame(frame)
+    entry = ctk.CTkEntry(entryparent,textvariable=ctkvar, validate='key', validatecommand = (frame.register(entry_validator),"%P"))
+    var.widget = entry
+    if units:
+        entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
+        unit_label = ctk.CTkLabel(entryparent,text=units)
+        unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
+    else:
+        entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
+    return lbl,var,entry,entryparent
+          
+def _make_and_grid(frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],grid_row: int,units: str|None = None, map_fun: Callable[[str],Any]|None = None) -> tuple[_SettingVariable,ctk.CTkEntry]:
+    lbl,var,entry,entryframe = _make_entry(frame,name,setting,initial_value,entry_validator,units=units,map_fun=map_fun)
+    lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
+    entryframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
+    return var,entry
 
 def _validate_time_float(timestr: str, allow_empty = True):
     if timestr == "":
@@ -627,7 +762,7 @@ def _validate_time_float(timestr: str, allow_empty = True):
         return False
     except:
         return False
-    
+
 def _validate_exposure(exp: str, allow_empty: bool = True) -> bool:
     if exp in ("","-",".") and allow_empty:
         return True

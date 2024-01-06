@@ -1,35 +1,38 @@
-from support_classes import Generator, SharedState, GeneratorException, Loggable
+from support_classes import Generator, SharedState, GeneratorException, Loggable, Settings, DEFAULT_SETTINGS, Capture, CaptureException
 from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, CV2_KERNEL_SIZE, LEVEL_STABILISATION_PERIOD
 from .Buffer import Buffer
 from .timeavg import TimeAvg
+from typing import Any
 import cv2
 import datetime
 import asyncio
 import time
 from math import isnan
 from pathlib import Path
-from .datalogger import log_data
 import numpy as np
 import copy
 import threading
 
 
-
 #TODO change this to typing.Sequence[int] if error
 Rect = tuple[int,int,int,int]
 
-LevelBuffer = Buffer[list[float]]
+LevelReading = tuple[float,float,float,float,float]
 
-class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
+class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 
     LOG_COLUMN_HEADERS = ["Timestamp","Elapsed Time","Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"]
-    DEFAULT_DIRECTORY = "pumps/levels"
 
-    def __init__(self, sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), absolute_logging_path: Path|None=None,**kwargs) -> None:
+    def __init__(self, 
+                 sensed_event = asyncio.Event(), 
+                 logging_state: SharedState[bool] = SharedState(False), 
+                 capture_device: Capture|None = None,
+                 absolute_logging_path: Path = DEFAULT_SETTINGS[Settings.LEVEL_DIRECTORY],
+                 sense_period: float = DEFAULT_SETTINGS[Settings.SENSING_PERIOD],
+                 average_window_length: float = DEFAULT_SETTINGS[Settings.AVERAGE_WINDOW_WIDTH],
+                 stabilisation_period: float = DEFAULT_SETTINGS[Settings.LEVEL_STABILISATION_PERIOD],
+                 **kwargs) -> None:
         
-
-        if absolute_logging_path is None:
-            absolute_logging_path = Path(__file__).absolute().parent / LevelSensor.DEFAULT_DIRECTORY
         super().__init__(directory = absolute_logging_path,default_headers = LevelSensor.LOG_COLUMN_HEADERS)
         
         # shared states:
@@ -41,57 +44,73 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
         self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
 
         # video parameters to be set at a later time before generation
-        self.__vc: cv2.VideoCapture|None = None
-        self.__video_device: int|None = None   
-        self.__vol_init: float|None = None
+        self.__vc: Capture|None = capture_device
+
+        # computer vision parameters
+        self.__stabilisation_period = stabilisation_period
+        self.__average_window_length = average_window_length
+        self.__sense_period = sense_period
 
         self.__indexAn: tuple[slice|slice]|None = None
         self.__indexCath: tuple[slice|slice]|None = None
         self.__scale: float|None = None
+
+        # initial volume is calculated after a certain number of iterations
+        self.__vol_init: float|None = None
 
         # public exposed property: signals that a level reading has been made
         # when set, it indicates that a reading has been made that has not been 
         self.sensed_event = sensed_event
 
         # external buffer for averaging level readings
-        buffer_size = int(BUFFER_WINDOW_LENGTH/LEVEL_SENSE_PERIOD)
-        self.__buffer = LevelBuffer(buffer_size)
+        # self.__buffer = LevelBuffer(buffer_size)
         # secretly set the buffer to the correct size without notifying of the change
-        self.state.value = (self.__buffer, None)
+        # self.state.value = (self.__buffer, None)
 
         # internal buffer for averaging level readings
-        self.__reading_an = TimeAvg(LEVEL_AVERAGE_PERIOD)
-        self.__reading_cath = TimeAvg(LEVEL_AVERAGE_PERIOD)
+        self.__reading_an = TimeAvg(self.__average_window_length)
+        self.__reading_cath = TimeAvg(self.__average_window_length)
 
         # loop counter: used in calculation for offset period
         self.__i: int = 0
 
-    def set_vision_parameters(self, video_device: int, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float):
-        
-        if any((video_device is None, rect1 is None, rect2 is None, rect_ref is None, vol_ref is None)):
+    def set_parameters(self,new_parameters: dict[Settings,Any],capture_device: Capture|None = None):
+        if capture_device is not None:
+            self.__vc.close()
+            self.__vc = capture_device
+        if Settings.SENSING_PERIOD in new_parameters.keys():
+            self.__sense_period = new_parameters[Settings.SENSING_PERIOD]
+        if Settings.AVERAGE_WINDOW_WIDTH in new_parameters.keys():
+            self.__average_window_length = new_parameters[Settings.AVERAGE_WINDOW_WIDTH]
+        if Settings.LEVEL_STABILISATION_PERIOD in new_parameters.keys():
+            self.__stabilisation_period = new_parameters[Settings.LEVEL_STABILISATION_PERIOD]
+
+    def set_vision_parameters(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float):
+        if any((rect1 is None, rect2 is None, rect_ref is None, vol_ref is None)):
             raise GeneratorException("Null values supplied to level sensor parameters")
-        self.__video_device = video_device
         self.__indexAn = _get_indices(rect1)
         self.__indexCath = _get_indices(rect2)
         self.__scale = vol_ref/rect_ref[3]
+        self.__vc = Capture.from_settings()
         pass
 
     def is_ready(self) -> bool:
-        return all((self.__video_device is not None,self.__indexAn is not None, self.__indexCath is not None, self.__scale is not None))
-
+        return all((self.__indexAn is not None, self.__indexCath is not None, self.__scale is not None))
 
     async def _setup(self):
-        if any((self.__video_device is None, self.__indexAn is None, self.__indexCath is None, self.__scale is None)):
+        if any((self.__vc is None, self.__indexAn is None, self.__indexCath is None, self.__scale is None)):
             raise GeneratorException("Null values supplied to level sensor parameters")
         self.new_file()
-        self.__vc = cv2.VideoCapture(self.__video_device)
+        self.__vc.open()
         self.__i = 0
         self.__initial_timestamp = time.time()
+        self.__vol_init = None
+        # set an initial sleep time. this is recalculated at each iteration of the loop
         self.__sleep_time = 0.5
         self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
         self.__display_thread.start()
 
-    async def _loop(self) -> LevelBuffer|None:
+    async def _loop(self) -> LevelReading|None:
 
         # wait until next reading is due
         await asyncio.sleep(self.__sleep_time)
@@ -121,7 +140,7 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
         reading_calculation_cath = self.__reading_cath.calculate()
 
         # set the initial volume to the current volume while still in stabilisation period
-        if self.__i*LEVEL_SENSE_PERIOD<LEVEL_STABILISATION_PERIOD:
+        if self.__i*self.__sense_period < self.__stabilisation_period:
             self.__vol_init = reading_calculation_an + reading_calculation_cath
 
         net_vol_change = reading_calculation_an + reading_calculation_cath - self.__vol_init
@@ -159,40 +178,35 @@ class LevelSensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
         # send to display thread
         self.__display_state.set_value(displayimg)
 
-
-        #--------------SAVE---------------
+        #--------------UPDATE---------------
         # update the logging state
         elapsed_seconds = t - self.__initial_timestamp
         # reading is now finished, increment reading counter and record performance time
         end_time = time.perf_counter()
         perftime = (end_time-start_time)/1000 # time in seconds for computer vision
         self.__i += 1
-        self.__sleep_time = max(LEVEL_SENSE_PERIOD - perftime,0)
+        self.__sleep_time = max(self.__sense_period - perftime,0)
 
         # save reading
-        if (not isnan(reading_calculation_an)) and (not isnan(reading_calculation_cath)):
-            data = [elapsed_seconds, reading_calculation_an, reading_calculation_cath, vol_diff,net_vol_change]
+        # if (not isnan(reading_calculation_an)) and (not isnan(reading_calculation_cath)):
+        data = [elapsed_seconds, reading_calculation_an, reading_calculation_cath, vol_diff,net_vol_change]
 
-            # save the data to the internal buffer and the exposed state
-            self.__buffer.add(data)
-            self.state.set_value((self.__buffer,frame))
-            # additional asyncio event set for pid await line
-            self.sensed_event.set()
+        # save the data to exposed state
+        # self.__buffer.add(data)
+        self.state.set_value((data,frame))
+        # additional asyncio event set for pid await line
+        self.sensed_event.set()
 
-            if self.__logging_state.force_value():
-                timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                logging_data = [timestamp,*list(map(str,data))]
-                self.log(logging_data)
-                # timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                # data_str = [timestamp] + list(map(str,data))
-                # if self.__datafile is None:
-                #     self.__datafile = timestamp
-                # log_data(self.__LOG_PATH,self.__datafile,data_str,column_headers=self.LOG_COLUMN_HEADERS)
+        #---------------SAVE---------------
+        if self.__logging_state.force_value():
+            timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+            logging_data = [timestamp,*list(map(str,data))]
+            self.log(logging_data)
 
     def teardown(self):
         self.__datafile = None
         if self.__vc is not None:
-            self.__vc.release()
+            self.__vc.close()
         self.__display_flag.clear()
         self.__display_thread.join()
         cv2.destroyAllWindows()
@@ -245,18 +259,15 @@ def _continuous_display(imgstate: SharedState[np.ndarray|None],run_event: thread
         run_event.clear()
         cv2.destroyWindow("Camera Feed")
 
-class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
+class DummySensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 
     def __init__(self,sensed_event = asyncio.Event(), logging_state: SharedState[bool] = SharedState(False), rel_level_directory="\\pumps\\levels",**kwargs) -> None:
         super().__init__()
         self.__FILENAME = "C:\\Users\\Thoma\\Documents\\Engineering\\Part C\\4YP\\controller\\pump_control\\dummy_level_data.csv"
-        buffer_size = int(BUFFER_WINDOW_LENGTH/LEVEL_SENSE_PERIOD)
-        self.__buffer = LevelBuffer(buffer_size)
-        # secretly set the buffer to the correct size
-        self.state.value = (self.__buffer,None)
         self.__logging_state = logging_state
         self.sensed_event = sensed_event
         self.f = None
+        self.__vol_init: float|None = None
     
     def set_vision_parameters(self,*args):
         pass
@@ -266,15 +277,22 @@ class DummySensor(Generator[tuple[LevelBuffer,np.ndarray|None]],Loggable):
         self.f = open(self.__FILENAME,mode="r",encoding="utf-8")
         self.f.readline()
         self.f.readline()
+        first_data = self.f.readline().rstrip("\n".split(","))
+        self.__vol_init = first_data[1] + first_data[2]
+        self.__initial_timestamp = time.time()
 
     async def _loop(self):
         await asyncio.sleep(5)
-        nextdiff = float(self.f.readline().rstrip("\n").split(",")[3])
-        self.__buffer.add(nextdiff)
-        self.state.set_value((self.__buffer,None))
+        new_data = self.f.readline().rstrip("\n").split(",")[1:]
+        
+
+        timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
+        elapsed_time = time.time()-self.__initial_timestamp
+        data_out = [elapsed_time,*new_data,float(new_data[1])+float(new_data[2])-self.__vol_init]
+        self.state.set_value((data_out,None))
         self.sensed_event.set()
         if self.__logging_state.force_value():
-            self.log(nextdiff)
+            self.log([timestamp,*data_out])
 
     def teardown(self):
         self.f.close()

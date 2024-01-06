@@ -11,6 +11,20 @@ class PumpNames(Enum):
     E = "e"
     F = "f"
 
+class CaptureBackend(Enum):
+    ANY = "Default"
+    PYGAME_WINDOWS_NATIVE = "Microsoft Media Foundation (pygame)"
+    PYGAME_LINUX_NATIVE = "Video for Linux (pygame)"
+    PYGAME_VIDEOCAPTURE = "VideoCapture (pygame)"
+    CV2_MSMF = "Microsoft Media Foundation (OpenCV)"
+    CV2_V4L2 = "Video for Linux (OpenCV)"
+    CV2_VFW = "Video for Windows (OpenCV)"
+    CV2_WINRT = "Windows Runtime (MSMF via OpenCV)"
+    CV2_DSHOW = "DirectShow (OpenCV)"
+    CV2_QT = "QuickTime (OpenCV)"
+
+CV2_BACKENDS = set([CaptureBackend.CV2_MSMF,CaptureBackend.CV2_V4L2,CaptureBackend.CV2_VFW,CaptureBackend.CV2_WINRT,CaptureBackend.CV2_QT])
+
 SETTINGS_FILENAME = "settings.json"
 
 class Settings(Enum):
@@ -42,6 +56,11 @@ class Settings(Enum):
     """Sets the time in seconds between images of the reservoirs"""
     AVERAGE_WINDOW_WIDTH = "average_window_width"
     """Sets the number of seconds over which level readings are averaged"""
+    LEVEL_STABILISATION_PERIOD = "level_stabilisation_period"
+    """Sets the time before which the initial volume of the tanks is recorded"""
+    CAMERA_INTERFACE_MODULE = "camera_interface_module"
+    """Python module to be used for the camera interface"""
+    CAMERA_BACKEND = "camera_backend"
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -63,14 +82,19 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.AUTO_EXPOSURE: True,
     Settings.EXPOSURE_TIME: 1000,
     Settings.SENSING_PERIOD: 5.0,
-    Settings.AVERAGE_WINDOW_WIDTH: 18*60.0
+    Settings.AVERAGE_WINDOW_WIDTH: 18*60.0,
+    Settings.LEVEL_STABILISATION_PERIOD: 120.0,
+    Settings.CAMERA_INTERFACE_MODULE: "OpenCV",
+    Settings.CAMERA_BACKEND: CaptureBackend.ANY
 }
 
 PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER])
 LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
 LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
-LEVEL_SETTINGS = set([Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH,Settings.EXPOSURE_TIME])
+CAMERA_SETTINGS = set([Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
+CV_SETTINGS = set([Settings.LEVEL_STABILISATION_PERIOD,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH])
+LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS])
 
 def read_settings(*keys: Settings) -> dict[Settings,Any]:
     all_settings = __open_settings_filesafe()
@@ -87,14 +111,11 @@ def read_settings(*keys: Settings) -> dict[Settings,Any]:
         # convert from str to pumpnames if setting involves a pump (and is not None)
         curr_value = out[key]
         out[key] = __cast_to_correct_type(key,curr_value)
-        # if key in PID_PUMPS:
-        #     pmp: str|None = out[key]
-        #     out[key] = PumpNames(out[key]) if pmp is not None else None
-        # elif key in LOG_DIRECTORIES:
-        #     path: str = out[key]
-        #     out[key] = Path(path)
-        
     return out
+
+def read_setting(setting: Settings):
+    key_val = read_settings(setting)
+    return key_val[setting]
 
 def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
     # read all settings
@@ -128,6 +149,10 @@ def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
         path = final_settings[pathsetting.value]
         if isinstance(path,Path):
             final_settings[pathsetting.value] = path.as_posix()
+    # convert from CaptureBackend to str
+    be = final_settings[Settings.CAMERA_BACKEND.value]
+    if isinstance(be,CaptureBackend):
+        final_settings[Settings.CAMERA_BACKEND.value] = be.value
     
 
     # write to file
@@ -160,5 +185,10 @@ def __cast_to_correct_type(key,value):
             value = Path(value)
         else:
             # if path is None (e.g. blank settings.json), then use the default path provided
+            value = DEFAULT_SETTINGS[key]
+    elif key == Settings.CAMERA_BACKEND:
+        if value is not None:
+            value = CaptureBackend(value)
+        else:
             value = DEFAULT_SETTINGS[key]
     return value

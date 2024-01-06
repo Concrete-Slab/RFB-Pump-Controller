@@ -1,10 +1,13 @@
 from typing import Any, Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
-from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, PID_PUMPS
+from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, CAMERA_SETTINGS, LEVEL_SETTINGS
 from concurrent.futures import Future
-from .async_levelsensor import LevelSensor, LevelBuffer, Rect
+
+from support_classes.camera_interface import Capture
+from .async_levelsensor import LevelSensor, LevelReading, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
+import numpy as np
 from abc import ABC
 import copy
 
@@ -61,7 +64,12 @@ class Pump(AsyncRunner,Teardown):
         self.__polling_logging_state: SharedState[bool] = SharedState[bool](False)
         # create the PID and level sense objects. The PID object operates on the shared state and sensed_event from the level object
         # self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
-        self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state,absolute_logging_path=settings[Settings.LEVEL_DIRECTORY])
+        self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state,
+                                                absolute_logging_path=settings[Settings.LEVEL_DIRECTORY],
+                                                capture_device=Capture.from_settings(),
+                                                sense_period=settings[Settings.SENSING_PERIOD],
+                                                stabilisation_period=settings[Settings.LEVEL_STABILISATION_PERIOD],
+                                                average_window_length=settings[Settings.AVERAGE_WINDOW_WIDTH])
         self.__pid: PIDRunner = PIDRunner(self.__level.state,
                                           self.__serial_interface,
                                           self.__level.sensed_event,
@@ -131,17 +139,15 @@ class Pump(AsyncRunner,Teardown):
     def stop_pid(self):
         self.__pid.stop()
 
-    def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[LevelBuffer]]:
+    def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[tuple[LevelReading,np.ndarray|None]]]:
         try:
-            video_device = read_settings(Settings.VIDEO_DEVICE)[Settings.VIDEO_DEVICE]
-            self.__level.set_vision_parameters(video_device, rect1, rect2, rect_ref, vol_ref)
+            self.__level.set_vision_parameters(rect1, rect2, rect_ref, vol_ref)
         except ValueError as e:
             print(e)
             self.state.set_value(ErrorState(LevelException(str(e))))
-        
         self.run_async(self.__level.generate(), callback = self.__levels_check_error)
         return (self.__level.is_running,self.__level.state)
-    
+
     def __levels_check_error(self,future: Future):
         try:
             future.result()
@@ -176,15 +182,25 @@ class Pump(AsyncRunner,Teardown):
                 if item in lst2:
                     return True
             return False
-        def _contains_all(lst1: list, lst2: list):
-            for item in lst1:
-                if item not in lst2:
-                    return False
-            return True
         modified_keys = set(modifications.keys())
+
+        # PID settings
         if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY]):
             self.stop_pid()
 
+        self.__pid.set_parameters({key:modifications[key] for key in modified_keys if key in PID_SETTINGS})
+
+        # Level settings
+        new_capture: Capture|None = None
+        if _contains_any(modified_keys,CAMERA_SETTINGS):
+            self.stop_levels()
+            new_capture = Capture.from_settings()
+        elif Settings.AVERAGE_WINDOW_WIDTH in modified_keys:
+            self.stop_levels()
+
+        self.__level.set_parameters({key:modifications[key] for key in modified_keys if key in LEVEL_SETTINGS},capture_device=new_capture) 
+
+        # Data settings
         if Settings.LEVEL_DIRECTORY in modified_keys:
             self.__level.set_dir(modifications[Settings.LEVEL_DIRECTORY])
         if Settings.PID_DIRECTORY in modified_keys:
@@ -202,7 +218,6 @@ class Pump(AsyncRunner,Teardown):
             self.__log_speeds = modifications[Settings.LOG_SPEEDS]
             self.__polling_logging_state.set_value(self.__log_speeds and self.logging_state.force_value())
 
-        self.__pid.set_parameters({key:modifications[key] for key in modified_keys if key in PID_SETTINGS})
 
     def set_logging(self,new_state: bool):
         self.__level_logging_state.set_value(self.__log_levels and new_state)

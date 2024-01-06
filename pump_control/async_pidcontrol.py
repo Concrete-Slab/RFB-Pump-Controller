@@ -2,7 +2,7 @@ from typing import Any
 import numpy as np
 from simple_pid import PID
 import datetime
-from .async_levelsensor import LevelBuffer
+from .async_levelsensor import LevelReading
 from serial_interface import GenericInterface
 import asyncio
 from support_classes import Generator,SharedState,Loggable, DEFAULT_SETTINGS, Settings, PumpNames
@@ -17,7 +17,7 @@ class PIDRunner(Generator[Duties],Loggable):
     LOG_COLUMN_HEADERS = ["Timestamp", "Elapsed Seconds", "Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
 
     def __init__(self, 
-                 level_state: SharedState[tuple[LevelBuffer,np.ndarray|None]], 
+                 level_state: SharedState[tuple[LevelReading,np.ndarray|None]], 
                  serial_interface: GenericInterface, level_event: asyncio.Event, 
                  logging_state: SharedState[bool]=SharedState(False), 
                  absolute_logging_directory: Path = DEFAULT_SETTINGS[Settings.PID_DIRECTORY], 
@@ -91,14 +91,18 @@ class PIDRunner(Generator[Duties],Loggable):
         if level_state is not None:
             # There is new data! Read it from the level generator queue
 
-            last_readings = np.array(level_state[0].read())
+            # level state is a tuple; the first item contains the LevelReading entry
+            last_readings = level_state[0]
+
+            # the LevelReading tuple is as follows:
+            # (elapsed time, anolyte volume, catholyte volume, anolyte-catholyte, anolyte+catholyte-initial)
 
             # Calculate the average of the buffer readings
             # positive if anolyte volume greater than catholyte volume
-            error = np.mean(last_readings[:,3])
+            error = last_readings[3]
 
-            volume_change = np.mean(last_readings[:,4])
-            init_volume = np.mean(last_readings[:,1]) + np.mean(last_readings[:,2]) - volume_change
+            volume_change = last_readings[4]
+            init_volume = last_readings[1] + last_readings[2] - volume_change
             
             # Perform the PID control (rounded as duty is an integer)
             control = round(self.__pid(error))
@@ -113,9 +117,6 @@ class PIDRunner(Generator[Duties],Loggable):
             if self.__logging_state.force_value():
                 timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
                 data = [timestamp, flowRateAn, flowRateCath,flowRateRefillAnolyte,flowRateRefillCatholyte]
-                # if self.__datafile is None:
-                #     self.__datafile = timestamp
-                # log_data(self.__LOG_PATH.as_posix(),self.__datafile,data,column_headers=self.LOG_COLUMN_HEADERS)
                 self.log(data)
             return duties
         return None
