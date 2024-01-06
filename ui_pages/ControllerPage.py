@@ -1,6 +1,6 @@
 from typing import Any
 import customtkinter as ctk
-from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme
+from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme,LevelBoolSwitch
 from .UIController import UIController
 from .PAGE_EVENTS import CEvents
 from .process_controllers import ProcessName
@@ -49,7 +49,11 @@ class ControllerPage(ctk.CTkFrame):
                 settings_fun = lambda process_name = process: self.UIcontroller.notify_event(CEvents.OPEN_SETTINGS,process_name)
             else:
                 settings_fun = None
-            process_box = BoolSwitch(self,process_state_var,str(process.value.get_instance().name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
+            if process == ProcessName.LEVEL:
+                process_box = LevelBoolSwitch(self,process_state_var,str(process.value.name),state_callback=lambda state,process_name = process: self.__switch_pressed(state,process_name),settings_callback=settings_fun,ROI_callback=self.__open_ROI_selection)
+                pass
+            else:
+                process_box = BoolSwitch(self,process_state_var,str(process.value.get_instance().name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
             process_box.grid(row=0,column=j+1,padx=10,pady=5,sticky="nsew")
             self.process_states[process] = process_state_var
             self.process_boxes[process] = process_box
@@ -64,6 +68,21 @@ class ControllerPage(ctk.CTkFrame):
         self.UIcontroller.add_listener(CEvents.AUTO_SPEED_SET,self.__auto_speed_set)
         self.UIcontroller.add_listener(CEvents.CLOSE_SETTINGS,lambda process_name: self.process_boxes[process_name].set_settings_button_active(True))
         self.UIcontroller.add_listener(CEvents.SETTINGS_MODIFIED,self.__maybe_change_pumps)
+        self.UIcontroller.add_listener(CEvents.CLOSE_ROI_SELECTION, self.__close_ROI_selection)
+
+        self.UIcontroller.add_listener(CEvents.START_PROCESS,self.__on_levels_start)
+        self.UIcontroller.add_listener(CEvents.PROCESS_CLOSED,self.__on_levels_closed)
+
+
+    def __on_levels_start(self,process):
+        if process == ProcessName.LEVEL:
+            lvlswitch: LevelBoolSwitch = self.process_boxes[ProcessName.LEVEL]
+            lvlswitch.set_ROI_button_active(False,with_callback=False)
+
+    def __on_levels_closed(self,process):
+        if process == ProcessName.LEVEL:
+            lvlswitch: LevelBoolSwitch = self.process_boxes[ProcessName.LEVEL]
+            lvlswitch.set_ROI_button_active(True,with_callback=False)
 
     def __auto_duty_set(self,identifier: PumpNames,duty: int):
         self.pump_map[identifier].dutyVar.set(duty)
@@ -73,6 +92,13 @@ class ControllerPage(ctk.CTkFrame):
 
     def __manual_duty_set(self,identifier:PumpNames,duty: int):
         self.UIcontroller.notify_event(CEvents.MANUAL_DUTY_SET,identifier,duty)
+
+    def __open_ROI_selection(self):
+        self.UIcontroller.notify_event(CEvents.OPEN_ROI_SELECTION)
+    
+    def __close_ROI_selection(self):
+        lvlswitch: LevelBoolSwitch = self.process_boxes[ProcessName.LEVEL]
+        lvlswitch.set_ROI_button_active(True)
 
     def __switch_pressed(self,new_state: SwitchState, switch_prefix: str):
         if new_state == SwitchState.STARTING:

@@ -34,7 +34,7 @@ import numpy as np
 
 class TimeAvg:
 
-    def __init__(self,delta_t,data_size: int = 0) -> None:
+    def __init__(self,delta_t: int,data_size: int = 0) -> None:
         self.__delta_t = delta_t
         self.stream: deque[_DataPoint] = deque()
         self.__latest_time: float|None = None
@@ -48,7 +48,6 @@ class TimeAvg:
             self.__data_size = len(data)
         elif len(data) != self.__data_size:
             raise ValueError("Time data size does not match that already in memory")
-        print(f"data is {data}")
         new_point = _DataPoint(data,timestamp)
         self.__latest_time = timestamp
         if self.__furthest_time is None:
@@ -59,9 +58,9 @@ class TimeAvg:
         self.stream.append(new_point)
     
     def calculate(self):
+        averages = [0.0]*self.__data_size
         if len(self.stream)<1:
-            return 0
-        averages = [0]*self.__data_size
+            return averages
         for i in range(0,self.__data_size):
             total = 0
             for j in range(0,len(self.stream)):

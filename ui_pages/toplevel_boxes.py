@@ -187,7 +187,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
         labels = [an_label,cath_label,an_refill_label,cath_refill_label]
 
         for i,var in enumerate(self.__vars):
-            var.trace_add("w",lambda *args,index=i: self.__update_selections(index,*args))
+            var.trace_add("write",lambda *args,index=i: self.__update_selections(index,*args))
             self.__boxes[i].grid(row=i,column=1,padx=10,pady=5,sticky="nsew")
             labels[i].grid(row=i,column=0,padx=10,pady=5,sticky="nsew")
 
@@ -424,6 +424,7 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
     def __select_volumes(self):
         self.initial_frame.pack_forget()
         self.volume_frame.pack()
+        self.__refentry.configure(border_color = ApplicationTheme.MANUAL_PUMP_COLOR)
         self.__refentry.focus_set()
 
     def __teardown_thread(self):
@@ -451,6 +452,8 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         if ref_vol_str != "" and float(ref_vol_str)>0:
             self.__teardown_thread()
             self.destroy_successfully(self.__r1,self.__r2,self.__h,float(ref_vol_str))
+        else:
+            self.__refentry.configure(border_color=ApplicationTheme.ERROR_COLOR)
             
     def destroy(self):
         super().destroy()
@@ -586,13 +589,13 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         pygame_display_backend = prev_backend.value if prev_backend.value in pygame_available_backends else CaptureBackend.ANY.value
         pygame_backend_ctkvar = ctk.StringVar(value=pygame_display_backend)
         self.pygame_backend_var = _SettingVariable(pygame_backend_ctkvar,Settings.CAMERA_BACKEND,map_fun=lambda str_in: CaptureBackend(str_in))
-        pygame_backend_menu = ctk.CTkOptionMenu(camera_frame,variable=pygame_backend_ctkvar,values = pygame_available_backends)
-        self.pygame_backend_var.widget = pygame_backend_menu
+        self.pygame_backend_menu = ctk.CTkOptionMenu(camera_frame,variable=pygame_backend_ctkvar,values = pygame_available_backends)
+        self.pygame_backend_var.widget = self.pygame_backend_menu
         self.pygame_backend_var.trace_add(self.__maybe_refresh_pygame_cameras)
 
         # camera selection dropdown menu
         pgvd_label = ctk.CTkLabel(camera_frame,text="Camera Device")
-        current_list = PygameCapture.get_cameras(backend=pygame_display_backend)
+        current_list = PygameCapture.get_cameras(backend=CaptureBackend(pygame_display_backend))
         selected_device = current_list[prev_vd] if prev_vd < len(current_list) else current_list[0]
         pgvd_ctkvar = ctk.StringVar(value=selected_device)
         self.pgvd_var = _SettingVariable(pgvd_ctkvar,Settings.VIDEO_DEVICE,map_fun=self.__cast_pygame_camera,validator=self.__validate_pygame_camera)
@@ -604,7 +607,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         self.pgvd_var.widget = self.pgvd_menu
 
         self.pygame_widgets: WidgetGridInfo = [(pygame_backend_label,self.__NUM_CAMERA_SETTINGS,0),
-                                               (pygame_backend_menu,self.__NUM_CAMERA_SETTINGS,1),
+                                               (self.pygame_backend_menu,self.__NUM_CAMERA_SETTINGS,1),
                                                (pgvd_label,self.__NUM_CAMERA_SETTINGS+1,0),
                                                (pgvd_frame,self.__NUM_CAMERA_SETTINGS+1,1)]
         self.pygame_vars = [self.pygame_backend_var,self.pgvd_var]
@@ -645,7 +648,9 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
             
         except RuntimeError:
             self.pygame_backend_var.set(CaptureBackend.ANY.value)
-            self.__maybe_refresh_pygame_cameras()
+            self.pygame_backend_menu.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+            self.after(1000,lambda: self.pygame_backend_menu.configure(fg_color = ApplicationTheme.MANUAL_PUMP_COLOR))
+            self.pygame_backend_menu.set(CaptureBackend.ANY.value)
     def __refresh_pygame_cameras(self):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
         try:

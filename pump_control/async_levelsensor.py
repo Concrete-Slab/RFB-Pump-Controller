@@ -68,8 +68,10 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         # self.state.value = (self.__buffer, None)
 
         # internal buffer for averaging level readings
-        self.__reading_an = TimeAvg(self.__average_window_length)
-        self.__reading_cath = TimeAvg(self.__average_window_length)
+        # self.__reading_an = TimeAvg(self.__average_window_length)
+        # self.__reading_cath = TimeAvg(self.__average_window_length)
+
+        self.__readings_buffer = TimeAvg(self.__average_window_length,data_size=4)
 
         # loop counter: used in calculation for offset period
         self.__i: int = 0
@@ -120,7 +122,7 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 
         #-----------CAPTURE-------------
         # take the frame and record its time
-        rval, frame = self.__vc.read()
+        frame = self.__vc.get_image()
         t = time.time()
 
         #---------COMPUTER-VISION---------
@@ -133,44 +135,44 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         frame_cath, vol_cath = _filter(frame_cath,self.__scale)
         # _draw_level(frame_cath,vol_cath/self.__scale)
 
-        # store CV results in internal buffer and calculate new average readings
-        self.__reading_an.append([vol_an,t])
-        self.__reading_cath.append([vol_cath,t])
-        reading_calculation_an = self.__reading_an.calculate()
-        reading_calculation_cath = self.__reading_cath.calculate()
+        if self.__i*self.__sense_period < self.__stabilisation_period or self.__vol_init is None:
+            net_vol_change = 0
+        else:
+            net_vol_change = vol_an + vol_cath - self.__vol_init
+        vol_diff = vol_an - vol_cath
+
+        raw_data = [vol_an,vol_cath,vol_diff,net_vol_change]
+        self.__readings_buffer.append(raw_data,t)
+        averaged_data = self.__readings_buffer.calculate()
+
+        avg_an = averaged_data[0]
+        avg_cath = averaged_data[1]
+        avg_diff = averaged_data[2]
+        avg_change = averaged_data[3]
 
         # set the initial volume to the current volume while still in stabilisation period
         if self.__i*self.__sense_period < self.__stabilisation_period:
-            self.__vol_init = reading_calculation_an + reading_calculation_cath
-
-        net_vol_change = reading_calculation_an + reading_calculation_cath - self.__vol_init
-        vol_diff = reading_calculation_an - reading_calculation_cath
+            self.__vol_init = avg_an + avg_cath
 
         #---------------DISPLAY-------------------
         original_frame = copy.copy(frame)
         # draw the level lines on the original and filtered images
-        if not isnan(reading_calculation_an) and not isnan(reading_calculation_cath):
-            _draw_level(frame_an,reading_calculation_an/self.__scale)
-            _draw_level(frame_cath,reading_calculation_cath/self.__scale)
-            _draw_level(original_frame[self.__indexAn[0],self.__indexAn[1],:],reading_calculation_an/self.__scale)
-            _draw_level(original_frame[self.__indexCath[0],self.__indexCath[1],:],reading_calculation_cath/self.__scale)
+        if not isnan(avg_an) and not isnan(avg_cath):
+            _draw_level(frame_an,vol_an/self.__scale)
+            _draw_level(frame_cath,vol_cath/self.__scale)
+            _draw_level(original_frame[self.__indexAn[0],self.__indexAn[1],:],avg_an/self.__scale)
+            _draw_level(original_frame[self.__indexCath[0],self.__indexCath[1],:],avg_cath/self.__scale)
         # place the filtered images onto the original image
         frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
         # write information text
-        cv2.putText(frame, f'Electrolyte Loss:{0-net_vol_change}mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+        cv2.putText(frame, f'Electrolyte Loss: {0-avg_change} mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Anolyte: {reading_calculation_an}mL', (10,70), cv2.FONT_HERSHEY_SIMPLEX, 
+        cv2.putText(frame, f'Anolyte: {avg_an} mL', (10,70), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Catholyte: {reading_calculation_cath}mL', (10,90), cv2.FONT_HERSHEY_SIMPLEX, 
+        cv2.putText(frame, f'Catholyte: {avg_cath}cmL', (10,90), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Diff: {vol_diff}mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Anolyte: {reading_calculation_an}mL', (20,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Catholyte: {reading_calculation_cath}mL', (30,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Diff: {vol_diff}m', (40,50), cv2.FONT_HERSHEY_SIMPLEX, 
+        cv2.putText(frame, f'Diff: {avg_diff} mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.5, (0, 0, 255), 2, cv2.LINE_AA)
 
         # concatenate original and filtered images
@@ -189,7 +191,7 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 
         # save reading
         # if (not isnan(reading_calculation_an)) and (not isnan(reading_calculation_cath)):
-        data = [elapsed_seconds, reading_calculation_an, reading_calculation_cath, vol_diff,net_vol_change]
+        data = [elapsed_seconds, avg_an, avg_cath, avg_diff,avg_change]
 
         # save the data to exposed state
         # self.__buffer.add(data)
@@ -257,7 +259,7 @@ def _continuous_display(imgstate: SharedState[np.ndarray|None],run_event: thread
             time.sleep(0.1)
     finally:
         run_event.clear()
-        cv2.destroyWindow("Camera Feed")
+        cv2.destroyAllWindows()
 
 class DummySensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 

@@ -16,16 +16,16 @@ class SwitchState(Enum):
 class BoolSwitch(ctk.CTkFrame):
 
     def __init__(self, parent, enum_state: ctk.IntVar, name: str, state_callback: Callable[[SwitchState],None]|None = None, settings_callback: Callable[[None],None]|None = None):
-        super().__init__(parent,fg_color=ApplicationTheme.WHITE)
+        super().__init__(parent,fg_color=ApplicationTheme.WHITE,width=100)
         self.state_var = enum_state
-        self.state_var.trace("w",self.__determine_state)
-        self.__name = name
-        self.__state_callback = state_callback
-        self.__settings_callback = settings_callback
+        self.state_var.trace_add("write",self._determine_state)
+        self._name = name
+        self._state_callback = state_callback
+        self._settings_callback = settings_callback
         self.button_var = ctk.StringVar(value="")
         self.button = ctk.CTkButton(self, 
                                     textvariable=self.button_var, 
-                                    command=self.__iterate_state, 
+                                    command=self._iterate_state, 
                                     font = ctk.CTkFont(family=ApplicationTheme.FONT, 
                                                         size=ApplicationTheme.INPUT_FONT_SIZE), 
                                     corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,
@@ -41,7 +41,7 @@ class BoolSwitch(ctk.CTkFrame):
                                                         size=ApplicationTheme.INPUT_FONT_SIZE), 
                                 )
         
-        self.__determine_state()
+        self._determine_state()
 
         self.rowconfigure([0,1],weight=1,uniform="row")
         
@@ -65,38 +65,38 @@ class BoolSwitch(ctk.CTkFrame):
         self.label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
         self.button.grid(row=1,column=0,padx=10,pady=5,sticky="nsew")
 
-    def __iterate_state(self):
+    def _iterate_state(self):
         if self.state_var.get() < 3:
             self.state_var.set(self.state_var.get()+1)
         else:
             self.state_var.set(0)
-        if self.__state_callback is not None:
-            self.__state_callback(SwitchState(self.state_var.get()))
+        if self._state_callback is not None:
+            self._state_callback(SwitchState(self.state_var.get()))
 
     def set_settings_button_active(self,isactive: bool):
-        if self.settings_button is not None and self.__settings_callback is not None:
+        if self.settings_button is not None and self._settings_callback is not None:
             if isactive:
                 self.settings_button.configure(state=ctk.NORMAL,require_redraw=True)
             else:
                 self.settings_button.configure(state=ctk.DISABLED,require_redraw=True)
-                self.__settings_callback()
+                self._settings_callback()
 
-    def __determine_state(self,*args) -> tuple[str,str]:
+    def _determine_state(self,*args) -> tuple[str,str]:
         match SwitchState(self.state_var.get()):
             case SwitchState.OFF:
-                self.label_var.set(self.__name + " is OFF")
+                self.label_var.set(self._name + " is OFF")
                 self.button_var.set("\u23f5")
                 self.button.configure(state=ctk.NORMAL)
             case SwitchState.STARTING:
-                self.label_var.set(self.__name + " is STARTING...")
+                self.label_var.set(self._name + " is STARTING...")
                 self.button_var.set("\u23f5")
                 self.button.configure(state=ctk.DISABLED)
             case SwitchState.ON:
-                self.label_var.set(self.__name + " is ON")
+                self.label_var.set(self._name + " is ON")
                 self.button_var.set("\u23f9")
                 self.button.configure(state=ctk.NORMAL)
             case SwitchState.CLOSING:
-                self.label_var.set(self.__name + " is CLOSING")
+                self.label_var.set(self._name + " is CLOSING")
                 self.button_var.set("\u23f9")
                 self.button.configure(state=ctk.DISABLED)
             case _:
@@ -104,6 +104,57 @@ class BoolSwitch(ctk.CTkFrame):
                 self.button_var.set("E")
                 self.button.configure(state=ctk.DISABLED)
         
+class LevelBoolSwitch(BoolSwitch):
+
+    def __init__(self, parent, enum_state: ctk.IntVar, name: str, state_callback: Callable[[SwitchState],None]|None = None, settings_callback: Callable[[None],None]|None = None, ROI_callback: Callable[[None],None]|None = None):
+        super().__init__(parent, enum_state,name,state_callback=state_callback,settings_callback=settings_callback)
+        self.label.grid_forget()
+        self.button.grid_forget()
+            
         
+        self._ROI_callback = ROI_callback
+        self.ROI_button = ctk.CTkButton(self,
+                                        command = lambda: self.set_ROI_button_active(False),
+                                        text = "\u2316",
+                                        font = ctk.CTkFont(family=ApplicationTheme.FONT, 
+                                                        size=ApplicationTheme.INPUT_FONT_SIZE),
+                                        corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,
+                                        hover_color=ApplicationTheme.GRAY,
+                                        fg_color = ApplicationTheme.LIGHT_GRAY,
+                                        text_color=ApplicationTheme.BLACK
+                                        )
+        
+        if settings_callback:
+            self.settings_button.grid_forget()
+            self.columnconfigure([0,1,2],weight=1,uniform="col")
+            self.settings_button.grid(row=1,column=2,padx=10,pady=5,sticky="nsew")
+            self.label.grid(row=0,column=0,columnspan=3,padx=10,pady=5,sticky="nsew")
+        else:
+            self.columnconfigure([0,1],weight=1,uniform="col")
+            self.columnconfigure(0,weight=1,uniform="col")
+            self.label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
+        self.button.grid(row=1,column=0,padx=10,pady=5,sticky="nsew")
+        self.ROI_button.grid(row=1,column=1,padx=10,pady=5,sticky="nsew")
+
+    def set_ROI_button_active(self,isactive: bool,with_callback: bool = True):
+        if isactive:
+            self._determine_state()
+            self.ROI_button.configure(state=ctk.NORMAL)
+            pass
+        else:
+            self.button.configure(state=ctk.DISABLED)
+            self.ROI_button.configure(state=ctk.DISABLED)
+            if with_callback:
+                self._ROI_callback()
+    
+    def set_settings_button_active(self,isactive: bool):
+        if self.settings_button is not None and self._settings_callback is not None:
+            if isactive:
+                self.settings_button.configure(state=ctk.NORMAL,require_redraw=True)
+                self.ROI_button.configure(state=ctk.NORMAL)
+            else:
+                self.settings_button.configure(state=ctk.DISABLED,require_redraw=True)
+                self.ROI_button.configure(state=ctk.DISABLED)
+                self._settings_callback()
             
 

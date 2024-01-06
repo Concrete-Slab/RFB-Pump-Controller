@@ -36,7 +36,9 @@ class CEvents(Enum):
     """Signals for a specified process to start. Callbacks to take ProcessName as an argument"""
     CLOSE_PROCESS = Literal["close_process"]
     """Signals for a specified process to close. Callbacks to take ProcessName as an argument"""
-    LEVEL_DATA_ACQUIRED = Literal["level_data_acquired"]
+    OPEN_ROI_SELECTION = Literal["open_roi_selection"]
+    """Signals that the user wishes to open the ROI selection screen"""
+    CLOSE_ROI_SELECTION = Literal["level_data_acquired"]
     """Signals that the required parameters for the level sensor have been acquired. Callbacks to take device_number, r1, r2, h, ref_vol, and init_vol as arguments"""
     OPEN_SETTINGS = Literal["open_settings"]
     """User wishes to open the settings for a process. Callbacks to take ProcessName as argument"""

@@ -139,6 +139,9 @@ class Pump(AsyncRunner,Teardown):
     def stop_pid(self):
         self.__pid.stop()
 
+    def levels_ready(self):
+        return self.__level.is_ready()
+
     def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[tuple[LevelReading,np.ndarray|None]]]:
         try:
             self.__level.set_vision_parameters(rect1, rect2, rect_ref, vol_ref)
