@@ -10,19 +10,36 @@ from typing import Callable
 import platform
 import time
 
+def __setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
+    actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
+    return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
+
+def __setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
+    actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
+    lst_devices = PygameCapture.get_cameras(backend=actual_backend)
+    actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
+    return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
+
+
 class Capture(ABC):
+
+    __INTERFACES = {
+        "OpenCV": __setup_cv2,
+        "Pygame": __setup_pygame
+    }
+
     @staticmethod
     def SUPPORTED_INTERFACES() -> list[str]:
-        return list(INTERFACES.keys())
+        return list(Capture.__INTERFACES.keys())
 
     @staticmethod
     def from_settings():
         params = read_settings(*CAMERA_SETTINGS)
         interface = params[Settings.CAMERA_INTERFACE_MODULE]
-        if interface in INTERFACES.keys():
-            capfun = INTERFACES[interface]
+        if interface in Capture.__INTERFACES.keys():
+            capfun = Capture.__INTERFACES[interface]
         else:
-            capfun = list(INTERFACES.values())[0]
+            capfun = list(Capture.__INTERFACES.values())[0]
         cap = capfun(params[Settings.VIDEO_DEVICE],params[Settings.AUTO_EXPOSURE],params[Settings.EXPOSURE_TIME],params[Settings.CAMERA_BACKEND])
         return cap
 
@@ -55,20 +72,6 @@ class Capture(ABC):
 
 SetupFunction = Callable[[int,bool,int,str],Capture]
 
-def __setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> Capture:
-    actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
-    return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
-
-def __setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> Capture:
-    actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
-    lst_devices = PygameCapture.get_cameras(backend=actual_backend)
-    actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
-    return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
-
-INTERFACES = {
-        "OpenCV": __setup_cv2,
-        "Pygame": __setup_pygame
-    }
 
 class CV2Capture(Capture):
     def __init__(self, device_id, auto_exposure=DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time=DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], **kwargs) -> None:
