@@ -10,10 +10,9 @@ from .PAGE_EVENTS import PSEvents
 class PortSelectController(UIController):
     
     def __init__(self,root: UIRoot,*args,debug=False,**kwargs) -> None:
-        super().__init__(root)
+        super().__init__(root,debug=debug)
         self.__root_callbacks = []
         self.__current_ports = []
-        self.debug = debug
         if debug:
             self.__supported_interfaces = DEBUG_SUPPORTED_INTERFACES
         else:

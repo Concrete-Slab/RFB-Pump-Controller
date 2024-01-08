@@ -8,9 +8,10 @@ from .toplevel_boxes import AlertBox
 
 class UIController:
 
-    def __init__(self,root: UIRoot):
+    def __init__(self,root: UIRoot,debug = False):
         super().__init__()
         self.__root = root
+        self.debug = debug
         self.__event_listeners: Dict[str,list[Callable[[Any],None]]] = {}
 
     # PROTECTED METHODS

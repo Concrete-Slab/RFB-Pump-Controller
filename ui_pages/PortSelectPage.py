@@ -33,8 +33,6 @@ class PortSelectPage(ctk.CTkFrame):
         else:
             self.interfaces = previous_interface
 
-        self.__show_advanced_settings = False
-
 
         # ------------- LAUNCH OPTIONS ------------------
         self.options_frame = ctk.CTkFrame(self)
@@ -79,6 +77,8 @@ class PortSelectPage(ctk.CTkFrame):
 
         # Connect controller and UI
         self.UIController = controller
+
+        self.__show_advanced_settings = not self.UIController.debug
 
         # Add event listeners:
         # when the controller finds new ports, update the UI
