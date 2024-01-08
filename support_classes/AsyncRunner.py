@@ -64,9 +64,9 @@ class AsyncRunner(ABC):
             self.stop_event_loop()
             raise e
         
-    def run_sync(self, callable: Callable[[None],Any], args: Iterable[Any] = None, kwargs: Dict[str,Any]|None = None):
+    def run_sync(self, callable: Callable[[None],Any], args: Iterable[Any] = None):
         try:
-            self.__loop.call_soon_threadsafe(callable,args=args)
+            self.__loop.call_soon_threadsafe(callable,*args)
             #
         except Exception as e:
             print(e)
