@@ -30,7 +30,7 @@ class PIDRunner(Generator[Duties],Loggable):
                  refill_time: int = DEFAULT_SETTINGS[Settings.REFILL_TIME],
                  refill_duty: int = DEFAULT_SETTINGS[Settings.REFILL_DUTY],
                  refill_percentage: int = DEFAULT_SETTINGS[Settings.REFILL_PERCENTAGE_TRIGGER],
-                 refill_cooldown_period: float = DEFAULT_SETTINGS[Settings.AVERAGE_WINDOW_WIDTH],
+                 refill_cooldown_period: float = DEFAULT_SETTINGS[Settings.PID_REFILL_COOLDOWN],
                  anolyte_pump: PumpNames|None = DEFAULT_SETTINGS[Settings.ANOLYTE_PUMP], 
                  catholyte_pump: PumpNames|None = DEFAULT_SETTINGS[Settings.CATHOLYTE_PUMP], 
                  anolyte_refill_pump: PumpNames|None = DEFAULT_SETTINGS[Settings.ANOLYTE_REFILL_PUMP], 
