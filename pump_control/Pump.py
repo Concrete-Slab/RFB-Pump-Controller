@@ -4,6 +4,7 @@ from support_classes import AsyncRunner, Teardown, SharedState, GeneratorExcepti
 from concurrent.futures import Future
 
 from support_classes.camera_interface import Capture
+from support_classes.settings_interface import read_setting
 from .async_levelsensor import LevelSensor, LevelReading, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
@@ -48,6 +49,9 @@ class Pump(AsyncRunner,Teardown):
         self.state: SharedState[PumpState] = SharedState[PumpState]()
 
         settings = read_settings()
+
+        
+
         self.__log_levels: bool = settings[Settings.LOG_LEVELS]
         self.__log_pid: bool = settings[Settings.LOG_PID]
         self.__log_speeds: bool = settings[Settings.LOG_SPEEDS]
@@ -64,27 +68,37 @@ class Pump(AsyncRunner,Teardown):
         self.__polling_logging_state: SharedState[bool] = SharedState[bool](False)
         # create the PID and level sense objects. The PID object operates on the shared state and sensed_event from the level object
         # self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
-        self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state,
-                                                absolute_logging_path=settings[Settings.LEVEL_DIRECTORY],
-                                                capture_device=Capture.from_settings(),
-                                                sense_period=settings[Settings.SENSING_PERIOD],
-                                                stabilisation_period=settings[Settings.LEVEL_STABILISATION_PERIOD],
-                                                average_window_length=settings[Settings.AVERAGE_WINDOW_WIDTH])
+        # self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state,
+        #                                         absolute_logging_path=settings[Settings.LEVEL_DIRECTORY],
+        #                                         capture_device=Capture.from_settings(),
+        #                                         sense_period=settings[Settings.SENSING_PERIOD],
+        #                                         stabilisation_period=settings[Settings.LEVEL_STABILISATION_PERIOD],
+        #                                         average_window_length=settings[Settings.AVERAGE_WINDOW_WIDTH])
+        # self.__pid: PIDRunner = PIDRunner(self.__level.state,
+        #                                   self.__serial_interface,
+        #                                   self.__level.sensed_event,
+        #                                   logging_state=self.__pid_logging_state,
+        #                                   absolute_logging_directory=settings[Settings.PID_DIRECTORY],
+        #                                   base_duty=settings[Settings.BASE_CONTROL_DUTY],
+        #                                   refill_time = settings[Settings.REFILL_TIME],
+        #                                   refill_duty = settings[Settings.REFILL_DUTY],
+        #                                   refill_percentage= settings[Settings.REFILL_PERCENTAGE_TRIGGER],
+        #                                   anolyte_pump = anolyte_pump,
+        #                                   catholyte_pump=catholyte_pump,
+        #                                   anolyte_refill_pump=anolyte_refill_pump,
+        #                                   catholyte_refill_pump=catholyte_refill_pump
+        #                                   )
+        # self.__poller: SerialReader = SerialReader(self.__serial_interface,logging_directory=settings[Settings.SPEED_DIRECTORY],logging_state=self.__polling_logging_state)
+        self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state)
         self.__pid: PIDRunner = PIDRunner(self.__level.state,
                                           self.__serial_interface,
                                           self.__level.sensed_event,
                                           logging_state=self.__pid_logging_state,
-                                          absolute_logging_directory=settings[Settings.PID_DIRECTORY],
-                                          base_duty=settings[Settings.BASE_CONTROL_DUTY],
-                                          refill_time = settings[Settings.REFILL_TIME],
-                                          refill_duty = settings[Settings.REFILL_DUTY],
-                                          refill_percentage= settings[Settings.REFILL_PERCENTAGE_TRIGGER],
-                                          anolyte_pump = anolyte_pump,
-                                          catholyte_pump=catholyte_pump,
-                                          anolyte_refill_pump=anolyte_refill_pump,
-                                          catholyte_refill_pump=catholyte_refill_pump
                                           )
-        self.__poller: SerialReader = SerialReader(self.__serial_interface,logging_directory=settings[Settings.SPEED_DIRECTORY],logging_state=self.__polling_logging_state)
+        self.__poller: SerialReader = SerialReader(self.__serial_interface,
+                                                   logging_state=self.__polling_logging_state)
+        self.change_settings(settings)
+
 
     def initialise(self):
         def on_established(future: Future[None]):
@@ -180,20 +194,26 @@ class Pump(AsyncRunner,Teardown):
             self.run_async(self.__serial_interface.write(writestr))
 
     def change_settings(self,modifications: dict[Settings,Any]):
-        def _contains_any(lst1: list, lst2: list):
+        def _contains_any(lst1: Iterable, lst2: Iterable):
             for item in lst1:
                 if item in lst2:
                     return True
             return False
         modified_keys = set(modifications.keys())
 
-        # PID settings
+        #----------------- PID settings --------------------
         if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY]):
             self.stop_pid()
+        if _contains_any(modified_keys,[Settings.AVERAGE_WINDOW_WIDTH]):
+            current_cooldown = read_setting(Settings.PID_REFILL_COOLDOWN)
+            if modifications[Settings.AVERAGE_WINDOW_WIDTH]<current_cooldown:
+                modifications[Settings.PID_REFILL_COOLDOWN] = modifications[Settings.AVERAGE_WINDOW_WIDTH]
 
-        self.__pid.set_parameters({key:modifications[key] for key in modified_keys if key in PID_SETTINGS})
+        # PID is running in a separate thread, so it needs to be queued in the threaded event loop
+        pid_mods = {key:modifications[key] for key in modified_keys if key in PID_SETTINGS}
+        self.run_sync(self.__pid.set_parameters,args = (pid_mods,))
 
-        # Level settings
+        #----------------- Level settings ------------------
         new_capture: Capture|None = None
         if _contains_any(modified_keys,CAMERA_SETTINGS):
             self.stop_levels()
@@ -201,9 +221,12 @@ class Pump(AsyncRunner,Teardown):
         elif Settings.AVERAGE_WINDOW_WIDTH in modified_keys:
             self.stop_levels()
 
-        self.__level.set_parameters({key:modifications[key] for key in modified_keys if key in LEVEL_SETTINGS},capture_device=new_capture) 
+        # Levels are running in a separate thread, so modifying needs to be queued on the event loop
+        level_mods = {key:modifications[key] for key in modified_keys if key in LEVEL_SETTINGS}
+        level_args = (level_mods,new_capture) if new_capture else (level_mods,)
+        self.run_sync(self.__level.set_parameters,args = level_args)
 
-        # Data settings
+        #----------------- Data settings --------------------
         if Settings.LEVEL_DIRECTORY in modified_keys:
             self.__level.set_dir(modifications[Settings.LEVEL_DIRECTORY])
         if Settings.PID_DIRECTORY in modified_keys:
@@ -220,7 +243,6 @@ class Pump(AsyncRunner,Teardown):
         if Settings.LOG_SPEEDS in modified_keys:
             self.__log_speeds = modifications[Settings.LOG_SPEEDS]
             self.__polling_logging_state.set_value(self.__log_speeds and self.logging_state.force_value())
-
 
     def set_logging(self,new_state: bool):
         self.__level_logging_state.set_value(self.__log_levels and new_state)

@@ -149,6 +149,7 @@ class PIDRunner(Generator[Duties],Loggable):
         self.__refill_time = int(new_parameters[Settings.REFILL_TIME]) if Settings.REFILL_TIME in new_parameters.keys() else self.__refill_time
         self.__refill_duty = int(new_parameters[Settings.REFILL_DUTY]) if Settings.REFILL_DUTY in new_parameters.keys() else self.__refill_duty
         self.__refill_percentage_trigger = int(new_parameters[Settings.REFILL_PERCENTAGE_TRIGGER]) if Settings.REFILL_PERCENTAGE_TRIGGER in new_parameters.keys() else self.__refill_percentage_trigger
+        self.__refill_cooldown_period = float(new_parameters[Settings.PID_REFILL_COOLDOWN]) if Settings.PID_REFILL_COOLDOWN in new_parameters.keys() else self.__refill_percentage_trigger
 
         for pmpsetting in self.__pid_pumps.keys():
             if pmpsetting in new_parameters.keys():
