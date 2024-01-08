@@ -50,7 +50,10 @@ class Capture(ABC):
         self._id = device_id
         self._auto_exposure = auto_exposure
         self._exposure_time = exposure_time
-        self._scale_factor = scale_factor
+        if scale_factor>0:
+            self._scale_factor = scale_factor
+        else:
+            self._scale_factor = DEFAULT_SETTINGS[Settings.IMAGE_RESCALE_FACTOR]
 
     @abstractmethod
     def get_image(self,rescale: bool = True) -> ndarray:
@@ -115,7 +118,7 @@ class CV2Capture(Capture):
                 return [*universal_backends,CaptureBackend.CV2_V4L2]
             case _:
                 return universal_backends
-    
+
 def _backend_to_cv2(be: CaptureBackend) -> int:
     match be:
         case CaptureBackend.ANY:
