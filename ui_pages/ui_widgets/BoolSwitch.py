@@ -123,7 +123,8 @@ class LevelBoolSwitch(BoolSwitch):
                                         fg_color = ApplicationTheme.LIGHT_GRAY,
                                         text_color=ApplicationTheme.BLACK
                                         )
-        
+        self.grid_propagate(False)
+        self.rowconfigure([0,1],weight=1,uniform="row")
         if settings_callback:
             self.settings_button.grid_forget()
             self.columnconfigure([0,1,2],weight=1,uniform="col")
@@ -135,15 +136,18 @@ class LevelBoolSwitch(BoolSwitch):
             self.label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
         self.button.grid(row=1,column=0,padx=10,pady=5,sticky="nsew")
         self.ROI_button.grid(row=1,column=1,padx=10,pady=5,sticky="nsew")
+        self.grid_propagate(True)
 
     def set_ROI_button_active(self,isactive: bool,with_callback: bool = True):
         if isactive:
             self._determine_state()
             self.ROI_button.configure(state=ctk.NORMAL)
+            self.settings_button.configure(state=ctk.NORMAL)
             pass
         else:
             self.button.configure(state=ctk.DISABLED)
             self.ROI_button.configure(state=ctk.DISABLED)
+            self.settings_button.configure(state=ctk.DISABLED)
             if with_callback:
                 self._ROI_callback()
     
