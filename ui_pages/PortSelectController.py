@@ -1,4 +1,6 @@
+from typing import Any
 from serial_interface import GenericInterface, InterfaceException,SUPPORTED_INTERFACES, DEBUG_SUPPORTED_INTERFACES
+from support_classes.settings_interface import Settings, modify_settings
 from .UIController import UIController
 from ui_root import UIRoot
 from pump_control import Pump, PumpState, ErrorState, ReadyState
@@ -52,6 +54,14 @@ class PortSelectController(UIController):
 
 
             pump.initialise()
+
+            # everything has worked! save the settings if they are not debug-specific:
+            modifications: dict[Settings,Any] = {}
+            if port in GenericInterface.get_serial_ports():
+                modifications = {Settings.RECENT_SERIAL_PORT:str(port)}
+            if interface_name in SUPPORTED_INTERFACES.keys():
+                modifications = {**modifications,Settings.RECENT_SERIAL_INTERFACE:str(interface_name)}
+            modify_settings(modifications)
         except KeyError:
             self.notify_event(PSEvents.ERROR,NotEstablishedException("Selected interface not available"))
         except InterfaceException as e:

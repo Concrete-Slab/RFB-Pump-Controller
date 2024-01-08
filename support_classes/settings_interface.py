@@ -67,6 +67,8 @@ class Settings(Enum):
     """Factor by which images taken by a Capture will be scaled by (preserving aspect ratio)"""
     RECENT_SERIAL_PORT = "recent_serial_port"
     """Most recently used serial port"""
+    RECENT_SERIAL_INTERFACE = "recent_serial_interface"
+    """Most recently used serial interface"""
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -94,7 +96,8 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.CAMERA_BACKEND: CaptureBackend.ANY,
     Settings.PID_REFILL_COOLDOWN: 18*60.0,
     Settings.IMAGE_RESCALE_FACTOR: 1.0,
-    Settings.RECENT_SERIAL_PORT: None
+    Settings.RECENT_SERIAL_PORT: None,
+    Settings.RECENT_SERIAL_INTERFACE: None
 }
 
 PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN])

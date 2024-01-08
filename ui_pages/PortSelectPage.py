@@ -1,5 +1,9 @@
 import customtkinter as ctk
 from typing import Any
+from pathlib import Path
+from PIL import Image
+
+from support_classes.settings_interface import read_setting,Settings,DEFAULT_SETTINGS, read_settings
 from .UIController import UIController
 from .PAGE_EVENTS import PSEvents
 import copy
@@ -13,23 +17,65 @@ class PortSelectPage(ctk.CTkFrame):
 
     def __init__(self, parent, controller: UIController, *args, starting_prompt: str = DEFAULT_PROMPT, **kwargs):
         super().__init__(parent,width=PortSelectPage.BOX_WIDTH,height=PortSelectPage.BOX_HEIGHT)
-        self.interfaces = [PortSelectPage.DEFAULT_INTERFACE_MESSAGE]
-        self.ports = [PortSelectPage.DEFAULT_PORT_MESSAGE]
+
+        previous_choices = read_settings(Settings.RECENT_SERIAL_PORT,Settings.RECENT_SERIAL_INTERFACE)
+        previous_port: str|None = previous_choices[Settings.RECENT_SERIAL_PORT]
+        previous_interface: str|None = previous_choices[Settings.RECENT_SERIAL_INTERFACE]
+
+        if previous_port is None:
+            self.ports = [PortSelectPage.DEFAULT_PORT_MESSAGE]
+        else:
+            self.ports = [previous_port]
+        previous_port = self.ports[0]
+
+        if previous_interface is None:
+            self.interfaces = [PortSelectPage.DEFAULT_INTERFACE_MESSAGE]
+        else:
+            self.interfaces = previous_interface
+
+        self.__show_advanced_settings = False
+
+
+        # ------------- LAUNCH OPTIONS ------------------
+        self.options_frame = ctk.CTkFrame(self)
+        self.options_frame.rowconfigure([0],weight=1,uniform="row")
+        self.options_frame.columnconfigure([0,3],weight=1)
+        self.options_frame.columnconfigure([1,2],weight=1,uniform="optionscol")
 
         self.selected_interface = ctk.StringVar(value=self.interfaces[0])
-        self.interface_menu = ctk.CTkOptionMenu(self,variable=self.selected_interface,values=self.interfaces)
+        self.interface_label = ctk.CTkLabel(self.options_frame,text="Serial Interface")
+        self.interface_menu = ctk.CTkOptionMenu(self.options_frame,variable=self.selected_interface,values=self.interfaces)
         self.selected_interface.trace_add("write",self.__place_interface)
         
         self.selected_port = ctk.StringVar(value=self.ports[0])
-        self.ports_menu = ctk.CTkOptionMenu(self,variable=self.selected_port,values=self.ports)
+        self.port_label = ctk.CTkLabel(self.options_frame,text="Serial Port")
+        self.ports_menu = ctk.CTkOptionMenu(self.options_frame,variable=self.selected_port,values=self.ports)
+        self.port_label.grid(row=0,column=0,padx=10,pady=5,sticky="nsew")
+        self.ports_menu.grid(row=0,column=1,columnspan=2,padx=10,pady=5,sticky="nsew")
 
         self.localhost_port = ctk.StringVar(value="8000")
-        self.localhost_entry = ctk.CTkEntry(self,textvariable=self.localhost_port,validate="key",validatecommand=(self.register(PortSelectPage.__validate), '%P'))
+        self.localhost_entry = ctk.CTkEntry(self.options_frame,textvariable=self.localhost_port,validate="key",validatecommand=(self.register(PortSelectPage.__validate), '%P'))
+        
+        fullpath = Path().absolute() / "ui_pages/ui_widgets/assets/refresh_label.png"
+        pilimg = Image.open(fullpath.as_posix())
+        refresh_image = ctk.CTkImage(light_image=pilimg,size=(20,20))
+        self.refresh_button = ctk.CTkButton(self.options_frame,text=None,image=refresh_image,command=lambda *args: self.UIController.notify_event(PSEvents.UPDATE_PORTS),width=21)
+        self.refresh_button.grid(row=0,column=3,padx=0,pady=5,sticky="nsew")
 
+        self.options_frame.grid(row=1,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
+
+        # ------------ Surrounding Widgets --------------------
+        self.columnconfigure([0,1],weight=1)
         self.status = ctk.StringVar(value=starting_prompt)
         self.status_label = ctk.CTkLabel(self,textvariable=self.status)
+        self.status_label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
 
         self.confirm_button = ctk.CTkButton(self,text="Confirm",command=self.__send_config)
+        self.confirm_button.grid(row=2,column=1,padx=10,pady=5,sticky="nse")
+
+        self.advanced_var = ctk.StringVar(value="More")
+        self.advanced_button = ctk.CTkButton(self,textvariable=self.advanced_var,command=self.__showhide_interfaces)
+        self.advanced_button.grid(row=2,column=0,padx=10,pady=5,sticky="nsw")
 
         # Connect controller and UI
         self.UIController = controller
@@ -48,26 +94,35 @@ class PortSelectPage(ctk.CTkFrame):
         # Get the current ports and update the UI
         self.UIController.notify_event(PSEvents.UPDATE_PORTS)
 
-
-        # Place the widgets onto the screen
-        self.columnconfigure([0,1,2,3],weight=1,uniform="col")
-        self.status_label.grid(row=0,column=0,columnspan=4,padx=10,pady=10,sticky="nsew")
-        self.__place_interface()
-        self.ports_menu.grid(row=1,column=2,columnspan=2,padx=10,pady=10,sticky="nsew")
-        self.confirm_button.grid(row=2,column=3,padx=10,pady=10,sticky="nsew")
+        self.__showhide_interfaces()
         
     def __update_ports(self,newPorts:list[str],descriptions:list[str]):
-        self.ports = [PortSelectPage.DEFAULT_PORT_MESSAGE]+newPorts
+        if len(newPorts)<1:
+            self.ports = [PortSelectPage.DEFAULT_PORT_MESSAGE]
+        else:
+            self.ports = newPorts
+        # convert ports to ports with description
         port_text = copy.copy(self.ports)
         for i in range(1,len(port_text)):
             port_text[i] = f"{self.ports[i]} - {descriptions[i-1]}"
+        
+        # check if the previously selected port is still in the list
         prevSelection = self.selected_port.get()
-        if prevSelection not in self.ports:
-            self.selected_port.set(value=self.ports[0])
+        # the first prevSelection will be from settings and contain only a port:
+        if prevSelection in self.ports:
+            index = self.ports.index(prevSelection)
+            prevSelection = port_text[index]
+        # if previous is not in new list, set to the start of the new list
+        if prevSelection not in port_text:
+            self.selected_port.set(value=port_text[0])
+        # configure the menu with the new values
         self.ports_menu.configure(require_redraw=True,values=port_text)
 
     def __update_interfaces(self,newInterfaces,requiredkwargs: dict[str,Any]):
-        self.interfaces = [PortSelectPage.DEFAULT_INTERFACE_MESSAGE]+newInterfaces
+        if len(newInterfaces)<1:
+            self.interfaces = [PortSelectPage.DEFAULT_INTERFACE_MESSAGE]
+        else:
+            self.interfaces = newInterfaces
         prevSelection = self.selected_interface.get()
         if prevSelection not in self.interfaces:
             self.selected_interface.set(value=self.interfaces[0])
@@ -102,11 +157,31 @@ class PortSelectPage(ctk.CTkFrame):
         #TODO make this independent of Node Forwarder: make it place a box for each required argument in the supplied interface!
         new_interface = self.selected_interface.get()
         if new_interface == "Node Forwarder"or new_interface == "Dummy Node Forwarder":
-            self.interface_menu.grid(row=1,column=0,columnspan=1,sticky="nsew",padx=10,pady=10)
-            self.localhost_entry.grid(row=1,column=1,columnspan=1,sticky="nsew",padx=10,pady=10)
+            self.options_frame.columnconfigure([1,2],weight=1,uniform="optionscol2")
+            self.options_frame.rowconfigure([0,1],weight=1)
+            self.interface_menu.grid(row=1,column=1,columnspan=1,sticky="nsew",padx=10,pady=5)
+            self.localhost_entry.grid(row=1,column=2,columnspan=1,sticky="nsew",padx=10,pady=5)
         else:
+            self.options_frame.columnconfigure([1],weight=1)
+            self.options_frame.rowconfigure([0],weight=1)
+            self.options_frame.rowconfigure([1],weight=0)
             self.localhost_entry.grid_remove()
-            self.interface_menu.grid(row=1,column=0,columnspan=2,sticky="nsew",padx=10,pady=10)
+            self.interface_menu.grid(row=1,column=1,columnspan=2,sticky="nsew",padx=10,pady=5)
+
+    def __showhide_interfaces(self):
+        if self.__show_advanced_settings:
+            # remove advanced settings
+            self.localhost_entry.grid_remove()
+            self.interface_menu.grid_remove()
+            self.interface_label.grid_remove()
+            self.advanced_var.set("More")
+        else:
+            # add advandec settings
+            self.interface_label.grid(row=1,column=0,padx=10,pady=5,sticky="nsew")
+            self.__place_interface()
+            self.advanced_var.set("Less")
+        self.__show_advanced_settings = not self.__show_advanced_settings
+
 
     @staticmethod
     def __validate(p: str):
