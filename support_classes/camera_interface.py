@@ -11,15 +11,15 @@ from typing import Callable
 import platform
 import time
 
-def _setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
+def _setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
-    return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
+    return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
 
-def _setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
+def _setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
     lst_devices = PygameCapture.get_cameras(backend=actual_backend)
     actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
-    return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
+    return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
 
 class Capture(ABC):
 
@@ -38,7 +38,7 @@ class Capture(ABC):
             capfun = Capture.__INTERFACES[interface]
         else:
             capfun = list(Capture.__INTERFACES.values())[0]
-        cap = capfun(params[Settings.VIDEO_DEVICE],params[Settings.AUTO_EXPOSURE],params[Settings.EXPOSURE_TIME],params[Settings.CAMERA_BACKEND])
+        cap = capfun(params[Settings.VIDEO_DEVICE],params[Settings.AUTO_EXPOSURE],params[Settings.EXPOSURE_TIME],params[Settings.CAMERA_BACKEND],params[Settings.IMAGE_RESCALE_FACTOR])
         return cap
 
     def __init__(self,device_id: int, 
@@ -227,7 +227,7 @@ class PygameCapture(Capture):
             img = PygameCapture.pygame_to_cv2(surf)
             if rescale:
                 imshape = img.shape
-                img = cv2.resize(img,(imshape[1]*self._scale_factor,imshape[0]*self._scale_factor))
+                img = cv2.resize(img,(int(imshape[1]*self._scale_factor),int(imshape[0]*self._scale_factor)))
             return img
         except RuntimeError:
             print("Failed to take image")
