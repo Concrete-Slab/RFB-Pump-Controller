@@ -4,7 +4,9 @@ import threading
 import atexit
 
 
-
+# Use this script to emulate the Teensyduino sending data over a serial port
+# Designed to be used in conjunction with a virtual serial port tool, such as Virtual Serial Port Driver
+# Pipe the port in this script to another COM port on this PC, then expose that port and use it in the application
 def send_periodically(ser: serial.Serial):
     while True:
         time.sleep(1)
@@ -15,7 +17,7 @@ def send_periodically(ser: serial.Serial):
             print(to_write)
 
 # Open the serial port
-ser = serial.Serial('COM2', 9600)  # Replace 'COMx' with your COM port
+ser = serial.Serial('COM2', 9600)  # Replace 'COMx' with your COM port to be piped
 atexit.register(ser.close)
 ports = "abcdef"
 lock = threading.Lock()
@@ -41,8 +43,8 @@ while True:
                 command = currentbytes.decode().split(",")
                 index = ports.find(command[0])
                 if index != -1 : 
-                    latest_data[index] = command[1]
-                    print(f"Writing: {command[0]},{command[1]}")
+                    latest_data[index] = command[1]*12300
+                    print(f"Written: {command[0]},{command[1]}")
             currentbytes=bytearray()
         elif store_bytes:
             currentbytes += nextbyte
