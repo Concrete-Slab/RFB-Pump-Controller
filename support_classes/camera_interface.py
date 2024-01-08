@@ -5,32 +5,30 @@ import cv2
 from pygame.surface import Surface
 from pygame.surfarray import array3d
 import pygame.camera as camera
+from pygame import _camera_opencv
 from abc import ABC, abstractmethod
 from typing import Callable
 import platform
 import time
 
-def __setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
+def _setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
     actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
     return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
 
-def __setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
+def _setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str) -> "Capture":
     actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
     lst_devices = PygameCapture.get_cameras(backend=actual_backend)
     actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
     return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend)
 
-
 class Capture(ABC):
 
     __INTERFACES = {
-        "OpenCV": __setup_cv2,
-        "Pygame": __setup_pygame
+        "OpenCV": _setup_cv2,
+        "Pygame": _setup_pygame
     }
 
-    @staticmethod
-    def SUPPORTED_INTERFACES() -> list[str]:
-        return list(Capture.__INTERFACES.keys())
+    SUPPORTED_INTERFACES = list(__INTERFACES.keys())
 
     @staticmethod
     def from_settings():
@@ -47,13 +45,15 @@ class Capture(ABC):
                  auto_exposure: bool = DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], 
                  exposure_time: int = DEFAULT_SETTINGS[Settings.EXPOSURE_TIME],
                  backend: CaptureBackend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND],
+                 scale_factor: int = DEFAULT_SETTINGS[Settings.IMAGE_RESCALE_FACTOR],
                  **kwargs) -> None:
         self._id = device_id
         self._auto_exposure = auto_exposure
         self._exposure_time = exposure_time
+        self._scale_factor = scale_factor
 
     @abstractmethod
-    def get_image(self) -> ndarray:
+    def get_image(self,rescale: bool = True) -> ndarray:
         pass
     @abstractmethod
     def open(self) -> None:
@@ -71,7 +71,6 @@ class Capture(ABC):
         pass
 
 SetupFunction = Callable[[int,bool,int,str],Capture]
-
 
 class CV2Capture(Capture):
     def __init__(self, device_id, auto_exposure=DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time=DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], **kwargs) -> None:
@@ -116,7 +115,7 @@ class CV2Capture(Capture):
                 return [*universal_backends,CaptureBackend.CV2_V4L2]
             case _:
                 return universal_backends
-        
+    
 def _backend_to_cv2(be: CaptureBackend) -> int:
     match be:
         case CaptureBackend.ANY:
@@ -149,7 +148,7 @@ class PygameCapture(Capture):
             camera.quit()
             camera.init(self.__pygame_backend)
             if self.__pygame_backend == "OpenCV":
-                self.__instance = camera.Camera(device_id,_backend_to_cv2(self.__backend))
+                self.__instance = PygameCV2Camera(device=device_id,api_preference=_backend_to_cv2(self.__backend))
             elif self.__pygame_backend == "_camera (msmf)":
                 all_cameras = self.get_cameras(backend=self.__backend)
                 device_name = all_cameras[device_id] if (device_id>=0 and device_id<len(all_cameras)) else all_cameras[0]
@@ -197,6 +196,12 @@ class PygameCapture(Capture):
         return cls.__recent_camera_list
     
     @classmethod
+    def will_block(cls,backend: CaptureBackend) -> bool:
+        # get whether a call to get_cameras will result in a lengthy, blocking call
+        new_backend = _backend_to_pygame(backend)
+        return not (new_backend and cls.__recent_backend and new_backend == cls.__recent_backend and new_backend != "OpenCV") or (new_backend is None and cls.__recent_backend is None and len(cls.__recent_camera_list)>0)
+
+    @classmethod
     def validate_device(cls,device: int|str,backend: CaptureBackend):
         if backend not in cls.get_backends():
             return False
@@ -216,13 +221,20 @@ class PygameCapture(Capture):
     def close(self) -> None:
         self.__instance.stop()
 
-    def get_image(self) -> ndarray:
+    def get_image(self,rescale: bool = True) -> ndarray:
         try:
             surf = self.__instance.get_image()
             img = PygameCapture.pygame_to_cv2(surf)
+            if rescale:
+                imshape = img.shape
+                img = cv2.resize(img,(imshape[1]*self._scale_factor,imshape[0]*self._scale_factor))
             return img
-        except:
+        except RuntimeError:
+            print("Failed to take image")
             raise CaptureException("Failed to take image")
+        except Exception as e:
+            print(e)
+        
 
     @staticmethod
     def pygame_to_cv2(surf: Surface) -> ndarray:
@@ -240,6 +252,8 @@ def _backend_to_pygame(be: CaptureBackend) -> str|None:
         return "videocapture"
     elif be in CV2_BACKENDS:
         return "OpenCV"
+    elif be == CaptureBackend.ANY:
+        return camera.get_backends()[0]
     # base case, or if CaptureBackend.ANY is passed
     return None
 
@@ -263,12 +277,33 @@ def open_cv2_window(name: str):
     finally:
         cv2.destroyWindow(name)
 
-def capture(arg0: Capture|str) -> ndarray:
+def capture(arg0: Capture|str,rescale = True) -> ndarray:
     if isinstance(arg0,str):
         img = cv2.imread(arg0)
         return img
     if isinstance(arg0,Capture):
         with open_video_device(arg0) as vc:
-            img = vc.get_image()
+            img = vc.get_image(rescale=rescale)
         return img
     raise TypeError("Capture argument must be Capture or str")
+
+# Pygame has a bug where sys is not imported. This class will override the faulty constructor:
+class PygameCV2Camera(_camera_opencv.Camera):
+
+    def __init__(self, device=0, size=(640, 480), mode="RGB", api_preference=None):
+
+        self._device_index = device
+        self._size = size
+
+        self.api_preference = api_preference
+
+        if mode == "RGB":
+            self._fmt = cv2.COLOR_BGR2RGB
+        elif mode == "YUV":
+            self._fmt = cv2.COLOR_BGR2YUV
+        elif mode == "HSV":
+            self._fmt = cv2.COLOR_BGR2HSV
+        else:
+            raise ValueError("Not a supported mode")
+
+        self._open = False
