@@ -217,7 +217,9 @@ class PygameCapture(Capture):
     def open(self) -> None:
         try:
             self.__instance.start()
-            time.sleep(1)
+            while not self.__instance.query_image():
+                time.sleep(0.5)
+            time.sleep(0.5)
         except:
             raise CaptureException("Failed to start pygame camera")
 
