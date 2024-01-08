@@ -187,7 +187,7 @@ class Pump(AsyncRunner,Teardown):
                 state_dict: dict[PumpNames,int] = {}
                 for pidpmp in pid_pumps:
                     if pidpmp is not None and pidpmp != identifier:
-                        self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp,0)))
+                        self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp.value,0)))
                         state_dict = {**state_dict, pidpmp: 0}
                 self.state.set_value(ActiveState(state_dict))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
@@ -204,10 +204,11 @@ class Pump(AsyncRunner,Teardown):
         #----------------- PID settings --------------------
         if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY]):
             self.stop_pid()
-        if _contains_any(modified_keys,[Settings.AVERAGE_WINDOW_WIDTH]):
-            current_cooldown = read_setting(Settings.PID_REFILL_COOLDOWN)
-            if modifications[Settings.AVERAGE_WINDOW_WIDTH]<current_cooldown:
-                modifications[Settings.PID_REFILL_COOLDOWN] = modifications[Settings.AVERAGE_WINDOW_WIDTH]
+        if _contains_any(modified_keys,[Settings.AVERAGE_WINDOW_WIDTH,Settings.PID_REFILL_COOLDOWN]):
+            cd_possibilities = read_settings(Settings.PID_REFILL_COOLDOWN,Settings.AVERAGE_WINDOW_WIDTH)
+            window: float = cd_possibilities[Settings.AVERAGE_WINDOW_WIDTH]
+            pid_cd: float = cd_possibilities[Settings.PID_REFILL_COOLDOWN]
+            modifications[Settings.PID_REFILL_COOLDOWN] = max(pid_cd,window)
 
         # PID is running in a separate thread, so it needs to be queued in the threaded event loop
         pid_mods = {key:modifications[key] for key in modified_keys if key in PID_SETTINGS}
