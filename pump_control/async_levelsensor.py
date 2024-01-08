@@ -78,7 +78,8 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 
     def set_parameters(self,new_parameters: dict[Settings,Any],capture_device: Capture|None = None):
         if capture_device is not None:
-            self.__vc.close()
+            if self.__vc:
+                self.__vc.close()
             self.__vc = capture_device
         if Settings.SENSING_PERIOD in new_parameters.keys():
             self.__sense_period = new_parameters[Settings.SENSING_PERIOD]
