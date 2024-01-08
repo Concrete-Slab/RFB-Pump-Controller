@@ -117,6 +117,8 @@ class UIRoot(ctk.CTk):
             if self.__current_frame is not None:
                 self.__current_frame.destroy()
             self.__current_frame = page_frame
+            self.columnconfigure([0],weight=1)
+            self.rowconfigure([0],weight=1)
             self.__current_frame.grid()
         except KeyError:
             raise UIError(f"Page \"{key}\" does not exist")
