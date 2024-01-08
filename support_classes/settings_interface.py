@@ -61,6 +61,12 @@ class Settings(Enum):
     CAMERA_INTERFACE_MODULE = "camera_interface_module"
     """Python module to be used for the camera interface"""
     CAMERA_BACKEND = "camera_backend"
+    PID_REFILL_COOLDOWN = "pid_refill_cooldown"
+    """Time after each refill in which the PID controller will not perform any more refills"""
+    IMAGE_RESCALE_FACTOR = "image_rescale_factor"
+    """Factor by which images taken by a Capture will be scaled by (preserving aspect ratio)"""
+    RECENT_SERIAL_PORT = "recent_serial_port"
+    """Most recently used serial port"""
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -85,14 +91,17 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.AVERAGE_WINDOW_WIDTH: 18*60.0,
     Settings.LEVEL_STABILISATION_PERIOD: 120.0,
     Settings.CAMERA_INTERFACE_MODULE: "OpenCV",
-    Settings.CAMERA_BACKEND: CaptureBackend.ANY
+    Settings.CAMERA_BACKEND: CaptureBackend.ANY,
+    Settings.PID_REFILL_COOLDOWN: 18*60.0,
+    Settings.IMAGE_RESCALE_FACTOR: 1.0,
+    Settings.RECENT_SERIAL_PORT: None
 }
 
-PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER])
+PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN])
 LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
 LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
-CAMERA_SETTINGS = set([Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
+CAMERA_SETTINGS = set([Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
 CV_SETTINGS = set([Settings.LEVEL_STABILISATION_PERIOD,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH])
 LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS])
 
