@@ -16,12 +16,10 @@ class ControllerPage(ctk.CTkFrame):
         self.UIcontroller = controller
 
         self.auto_pumps: dict[Settings,PumpNames] = read_settings(Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP)
-
         self.pump_map: dict[PumpNames, PumpWidget] = {}
-        nColumns = len(ProcessName) + 2
+        nColumns = len(ProcessName)
         nInitialRows = 2
-        self.columnconfigure(list(range(1,nColumns-1)),weight=1,uniform="col")
-        self.columnconfigure([0,nColumns-1],weight=1)
+        self.columnconfigure(list(range(0,nColumns)),weight=1,uniform="col")
         i=nInitialRows
 
         for identifier in PumpNames:
@@ -54,7 +52,8 @@ class ControllerPage(ctk.CTkFrame):
                 pass
             else:
                 process_box = BoolSwitch(self,process_state_var,str(process.value.get_instance().name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
-            process_box.grid(row=0,column=j+1,padx=10,pady=5,sticky="nsew")
+            
+            process_box.grid(row=0,column=len(ProcessName)-1-j,padx=10,pady=5,sticky="nsew")
             self.process_states[process] = process_state_var
             self.process_boxes[process] = process_box
 

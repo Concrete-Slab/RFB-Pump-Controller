@@ -1,10 +1,11 @@
 import customtkinter as ctk
+from PIL import Image
 import cv2
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
 from support_classes import capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture
-#TODO make independent of model class
-from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
-from typing import Generic,ParamSpec,Callable,Any,TypeVar
+# #TODO make independent of model class
+# from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
+from typing import Generic,ParamSpec,Callable,Any,TypeVar, Protocol
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
 import threading
@@ -60,7 +61,35 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
     def bring_forward(self):
         self.attributes('-topmost', 1)
         self.after(400,lambda: self.attributes('-topmost', 0))
-    
+
+    def generate_layout(self,*segment_names: list[str],confirm_command: Callable[[None],None] = lambda: None) -> list[ctk.CTkFrame]:
+        nFrames = len(segment_names)
+        cols = list(range(0,nFrames+1))
+        self.columnconfigure(cols,weight=1)
+        self.rowconfigure([0,1],weight=1)
+        frmlst = [ctk.CTkFrame(self)]*nFrames
+        for col_number,segment_name in enumerate(segment_names):
+            # generate the segment
+            current_frame = ctk.CTkFrame(self)
+            current_frame.columnconfigure([1],weight=1)
+            current_frame.rowconfigure([1],weight=1)
+            # add a label
+            lbl = ctk.CTkLabel(current_frame,text=segment_name)
+            lbl.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
+            # add a frame to add items to later
+            items_frame = ctk.CTkFrame(current_frame)
+            frmlst[col_number] = items_frame
+            items_frame.grid(row=1,column=0,padx=0,pady=0,sticky="nsew")
+            # add the segment to the view
+            current_frame.grid(row=0,column=col_number,padx=10,pady=5,sticky="nsew")
+        # add a "Confirm" and "Cancel" button to the base of the view
+        confirm_button = ctk.CTkButton(self,text="Confirm",command=confirm_command)
+        confirm_button.grid(row=1,column=1,padx=10,pady=5,sticky="nse")
+        cancel_button = ctk.CTkButton(self,text="Cancel",command=self.destroy)
+        cancel_button.grid(row=1,column=0,padx=10,pady=5,sticky="nsw")
+        # return the frames for other code to add items to
+        return frmlst
+
 class DataSettingsBox(AlertBox[dict[Settings,Any]]):
 
     ALERT_TITLE = "Data Logging Settings"
@@ -117,7 +146,7 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
                                          command = self.__select_from_explorer)
         directory_button.grid(row=1,column=1,padx=10,pady=5,sticky="ne")
 
-        self.columnconfigure([0,1],weight = 1, uniform = "col")
+        self.columnconfigure([0],weight = 1, uniform = "col")
         directory_frame.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
         switch_frame.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
 
@@ -164,85 +193,197 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.title(self.ALERT_TITLE)
 
-        self.__default_options = ["None"]
+        default_options = ["None"]
         for pmpname in PumpNames:
-            self.__default_options.append(pmpname.value.lower())
+            default_options.append(pmpname.value.lower())
 
         pid_settings = read_settings(*PID_SETTINGS)
         pump_settings: dict[Settings,PumpNames|None] = {key:pid_settings[key] for key in PID_PUMPS}
-        an_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_PUMP]))
-        cath_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_PUMP]))
-        an_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_REFILL_PUMP]))
-        cath_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_REFILL_PUMP]))
-        self.__vars = [an_var,cath_var,an_re_var,cath_re_var]
-        
-        anolyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_var)
-        catholyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_var)
-        anolyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_re_var)
-        catholyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_re_var)
-        self.__boxes = [anolyte_selection,catholyte_selection,anolyte_refill_selection,catholyte_refill_selection]
+        # an_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_PUMP]))
+        # cath_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_PUMP]))
+        # an_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_REFILL_PUMP]))
+        # cath_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_REFILL_PUMP]))
+        # self.__vars = [an_var,cath_var,an_re_var,cath_re_var]
 
-        an_label = ctk.CTkLabel(self,text="Anolyte Pump")
-        cath_label = ctk.CTkLabel(self,text="Catholyte Pump")
-        an_refill_label = ctk.CTkLabel(self,text="Anolyte Refill Pump")
-        cath_refill_label = ctk.CTkLabel(self,text="Catholyte Refill Pump")
-        labels = [an_label,cath_label,an_refill_label,cath_refill_label]
+        # self.columnconfigure([0,1],weight=1)
+        # self.rowconfigure([0,1],weight=1)
+        # pump_frame = ctk.CTkFrame(self)
+        # pump_lbl = ctk.CTkLabel(pump_frame,text="Pump Assignments")
+        # pump_lbl.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
+        # control_frame = ctk.CTkFrame(self)
+        # control_lbl = ctk.CTkLabel(control_frame,text="Control Parameters")
+        # control_lbl.grid(row=0,column=1,columnspan=2,padx=10,pady=5,sticky="nsew")
+        # pump_frame.grid(row=0,column=0,padx=10,pady=5,sticky="nsew")
+        # control_frame.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
 
-        for i,var in enumerate(self.__vars):
+        frame_list = self.generate_layout("Pump Assignments","Control Parameters",confirm_command=self.__confirm_selections)
+        pump_frame = frame_list[0]
+        control_frame = frame_list[1]
+
+        self.pump_group = _WidgetGroup(initial_row=0)
+        an_var = _make_and_group(_make_menu,
+                                 pump_frame,
+                                 "Anolyte Pump",
+                                 Settings.ANOLYTE_PUMP,
+                                 _json2str(pump_settings[Settings.ANOLYTE_PUMP]),
+                                 self.pump_group,
+                                 map_fun=_str2json,
+                                 values=default_options
+                                 )
+        cath_var = _make_and_group(_make_menu,
+                                 pump_frame,
+                                 "Catholyte Pump",
+                                 Settings.CATHOLYTE_PUMP,
+                                 _json2str(pump_settings[Settings.CATHOLYTE_PUMP]),
+                                 self.pump_group,
+                                 map_fun=_str2json,
+                                 values=default_options
+                                 )
+        an_re_var = _make_and_group(_make_menu,
+                                 pump_frame,
+                                 "Anolyte Refill Pump",
+                                 Settings.ANOLYTE_REFILL_PUMP,
+                                 _json2str(pump_settings[Settings.ANOLYTE_REFILL_PUMP]),
+                                 self.pump_group,
+                                 map_fun=_str2json,
+                                 values=default_options
+                                 )
+        cath_re_var = _make_and_group(_make_menu,
+                                 pump_frame,
+                                 "Catholyte Refill Pump",
+                                 Settings.CATHOLYTE_REFILL_PUMP,
+                                 _json2str(pump_settings[Settings.CATHOLYTE_REFILL_PUMP]),
+                                 self.pump_group,
+                                 map_fun=_str2json,
+                                 values=default_options
+                                 )
+        pump_vars = self.pump_group.get_vars()
+
+        for i,var in enumerate(pump_vars):
             var.trace_add("write",lambda *args,index=i: self.__update_selections(index,*args))
-            self.__boxes[i].grid(row=i,column=1,padx=10,pady=5,sticky="nsew")
-            labels[i].grid(row=i,column=0,padx=10,pady=5,sticky="nsew")
+        self.pump_group.show()
 
+        # anolyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_var)
+        # catholyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_var)
+        # anolyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_re_var)
+        # catholyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_re_var)
+        # self.__boxes = [anolyte_selection,catholyte_selection,anolyte_refill_selection,catholyte_refill_selection]
 
-        base_duty_label = ctk.CTkLabel(self,text="Equilibrium Control Duty")
-        rf_time_label = ctk.CTkLabel(self,text="Refill Time")
-        rf_duty_label = ctk.CTkLabel(self,text="Refill Duty")
-        rf_percent_label = ctk.CTkLabel(self,text="Refill Solvent Loss Trigger")
+        # an_label = ctk.CTkLabel(self,text="Anolyte Pump")
+        # cath_label = ctk.CTkLabel(self,text="Catholyte Pump")
+        # an_refill_label = ctk.CTkLabel(self,text="Anolyte Refill Pump")
+        # cath_refill_label = ctk.CTkLabel(self,text="Catholyte Refill Pump")
+        # labels = [an_label,cath_label,an_refill_label,cath_refill_label]
 
-        entry_labels = [base_duty_label,rf_time_label,rf_duty_label,rf_percent_label]
-
-        base_duty_frame = ctk.CTkFrame(self,corner_radius=0)
-        self.__base_duty_var = ctk.StringVar(value=pid_settings[Settings.BASE_CONTROL_DUTY])
-        base_duty_box = ctk.CTkEntry(base_duty_frame, textvariable=self.__base_duty_var, validate='key', validatecommand = (self.register(_validate_duty),"%P"))
-        base_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-
-        rf_time_frame = ctk.CTkFrame(self,corner_radius=0)
-        self.__rf_time_var = ctk.StringVar(value=pid_settings[Settings.REFILL_TIME])
-        rf_time_box = ctk.CTkEntry(rf_time_frame, textvariable=self.__rf_time_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
-        seconds_label = ctk.CTkLabel(rf_time_frame,text="s")
-        rf_time_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-        seconds_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
-
-        rf_duty_frame = ctk.CTkFrame(self,corner_radius=0)
-        self.__rf_duty_var = ctk.StringVar(value=pid_settings[Settings.REFILL_DUTY])
-        rf_duty_box = ctk.CTkEntry(rf_duty_frame, textvariable=self.__rf_duty_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
-        rf_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-
-        rf_percent_frame = ctk.CTkFrame(self,corner_radius=0)
-        self.__rf_percent_var = ctk.StringVar(value=pid_settings[Settings.REFILL_PERCENTAGE_TRIGGER])
-        rf_percent_box = ctk.CTkEntry(rf_percent_frame, textvariable=self.__rf_percent_var ,validate='key', validatecommand = (self.register(_validate_percent),"%P"))
-        percent_label = ctk.CTkLabel(rf_percent_frame,text="%")
-        rf_percent_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-        percent_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
-        self.__refill_entries = [rf_time_box,rf_duty_box,rf_percent_box]
-        entry_frames = [base_duty_frame,rf_time_frame,rf_duty_frame,rf_percent_frame]
-
-        currRow = len(self.__vars)
-
-        for j in range(0,len(entry_frames)):
-            entry_labels[j].grid(row=j+currRow,column=0,padx=10,pady=5,sticky="nsew")
-            entry_frames[j].grid(row=j+currRow,column=1,padx=5,pady=0,sticky="nsew")
-
-        currRow = currRow + len(entry_frames)
+            # self.__boxes[i].grid(row=i,column=1,padx=10,pady=5,sticky="nsew")
+            # labels[i].grid(row=i,column=0,padx=10,pady=5,sticky="nsew")
+        self.control_group = _WidgetGroup(initial_row=0)
+        base_duty_var = _make_and_group(_make_entry,
+                                        control_frame,
+                                        "Equilibrium Control Duty",
+                                        Settings.BASE_CONTROL_DUTY,
+                                        pid_settings[Settings.BASE_CONTROL_DUTY],
+                                        self.control_group,
+                                        map_fun=int,
+                                        entry_validator = _validate_duty,
+                                        on_return = self.__confirm_selections
+                                        )
+        rf_time_var = _make_and_group(_make_entry,
+                                        control_frame,
+                                        "Refill Time",
+                                        Settings.REFILL_TIME,
+                                        pid_settings[Settings.REFILL_TIME],
+                                        self.control_group,
+                                        map_fun=float,
+                                        entry_validator = _validate_time_float,
+                                        on_return = self.__confirm_selections
+                                        )
+        rf_duty_var = _make_and_group(_make_entry,
+                                        control_frame,
+                                        "Refill Duty",
+                                        Settings.REFILL_DUTY,
+                                        pid_settings[Settings.REFILL_DUTY],
+                                        self.control_group,
+                                        map_fun=int,
+                                        entry_validator = _validate_duty,
+                                        on_return = self.__confirm_selections
+                                        )
+        rf_percent_var = _make_and_group(_make_entry,
+                                        control_frame,
+                                        "Refill Percent Trigger",
+                                        Settings.REFILL_PERCENTAGE_TRIGGER,
+                                        pid_settings[Settings.REFILL_PERCENTAGE_TRIGGER],
+                                        self.control_group,
+                                        map_fun=int,
+                                        entry_validator = _validate_percent,
+                                        on_return = self.__confirm_selections
+                                        )
+        rf_cooldown_var = _make_and_group(_make_entry,
+                                        control_frame,
+                                        "Refill Cooldown Period",
+                                        Settings.PID_REFILL_COOLDOWN,
+                                        pid_settings[Settings.PID_REFILL_COOLDOWN],
+                                        self.control_group,
+                                        map_fun=float,
+                                        entry_validator = _validate_time_float,
+                                        on_return = self.__confirm_selections
+                                        )
+        
+        self.control_group.show()
         
 
-        confirm_button = ctk.CTkButton(self,command=self.__confirm_selections,text="Confirm",corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
-        confirm_button.grid(row=currRow,column=1,padx=10,pady=5,sticky="nes")
+
+        # base_duty_label = ctk.CTkLabel(self,text="Equilibrium Control Duty")
+        # rf_time_label = ctk.CTkLabel(self,text="Refill Time")
+        # rf_duty_label = ctk.CTkLabel(self,text="Refill Duty")
+        # rf_percent_label = ctk.CTkLabel(self,text="Refill Solvent Loss Trigger")
+
+        # entry_labels = [base_duty_label,rf_time_label,rf_duty_label,rf_percent_label]
+
+        # base_duty_frame = ctk.CTkFrame(self,corner_radius=0)
+        # self.__base_duty_var = ctk.StringVar(value=pid_settings[Settings.BASE_CONTROL_DUTY])
+        # base_duty_box = ctk.CTkEntry(base_duty_frame, textvariable=self.__base_duty_var, validate='key', validatecommand = (self.register(_validate_duty),"%P"))
+        # base_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+
+        # rf_time_frame = ctk.CTkFrame(self,corner_radius=0)
+        # self.__rf_time_var = ctk.StringVar(value=pid_settings[Settings.REFILL_TIME])
+        # rf_time_box = ctk.CTkEntry(rf_time_frame, textvariable=self.__rf_time_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
+        # seconds_label = ctk.CTkLabel(rf_time_frame,text="s")
+        # rf_time_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+        # seconds_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
+
+        # rf_duty_frame = ctk.CTkFrame(self,corner_radius=0)
+        # self.__rf_duty_var = ctk.StringVar(value=pid_settings[Settings.REFILL_DUTY])
+        # rf_duty_box = ctk.CTkEntry(rf_duty_frame, textvariable=self.__rf_duty_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
+        # rf_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+
+        # rf_percent_frame = ctk.CTkFrame(self,corner_radius=0)
+        # self.__rf_percent_var = ctk.StringVar(value=pid_settings[Settings.REFILL_PERCENTAGE_TRIGGER])
+        # rf_percent_box = ctk.CTkEntry(rf_percent_frame, textvariable=self.__rf_percent_var ,validate='key', validatecommand = (self.register(_validate_percent),"%P"))
+        # percent_label = ctk.CTkLabel(rf_percent_frame,text="%")
+        # rf_percent_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
+        # percent_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
+        # self.__refill_entries = [rf_time_box,rf_duty_box,rf_percent_box]
+        # entry_frames = [base_duty_frame,rf_time_frame,rf_duty_frame,rf_percent_frame]
+
+        # currRow = len(self.__vars)
+
+        # for j in range(0,len(entry_frames)):
+        #     entry_labels[j].grid(row=j+currRow,column=0,padx=10,pady=5,sticky="nsew")
+        #     entry_frames[j].grid(row=j+currRow,column=1,padx=5,pady=0,sticky="nsew")
+
+        # currRow = currRow + len(entry_frames)
+        
+        # currRow = max(self.control_group.current_row,self.pump_group.current_row)
+        # confirm_button = ctk.CTkButton(self,command=self.__confirm_selections,text="Confirm",corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
+        # confirm_button.grid(row=currRow,column=1,padx=10,pady=5,sticky="nes")
+        # cancel_button = ctk.CTkButton(self,command=self.destroy,text="Cancel",corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
+        # cancel_button.grid(row=currRow,column=0,padx=10,pady=5,sticky="new")
         
 
     def __update_selections(self,var_index,*args):
         # make sure there are no duplicate selections
-        vars_copy = copy.copy(self.__vars)
+        vars_copy = copy.copy(self.pump_group.get_vars())
         selected_value = vars_copy.pop(var_index).get()
         if selected_value != "None":
             for var in vars_copy:
@@ -252,39 +393,36 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
 
         
     def __confirm_selections(self):
-        pump_settings = {
-            Settings.ANOLYTE_PUMP: _str2json(self.__vars[0].get()),
-            Settings.CATHOLYTE_PUMP: _str2json(self.__vars[1].get()),
-            Settings.ANOLYTE_REFILL_PUMP: _str2json(self.__vars[2].get()),
-            Settings.CATHOLYTE_REFILL_PUMP: _str2json(self.__vars[3].get())
-        }
+        # pump_settings = {
+        #     Settings.ANOLYTE_PUMP: _str2json(self.__vars[0].get()),
+        #     Settings.CATHOLYTE_PUMP: _str2json(self.__vars[1].get()),
+        #     Settings.ANOLYTE_REFILL_PUMP: _str2json(self.__vars[2].get()),
+        #     Settings.CATHOLYTE_REFILL_PUMP: _str2json(self.__vars[3].get())
+        # }
+        pump_settings = {var.setting:var.get_mapped() for var in self.pump_group.get_vars()}
         # final check that there are no duplicates (except None values)
         prev_values = []
-        for key,value in pump_settings.items():
-            if value is not None and value in prev_values:
-                pump_settings[key] = None
-            prev_values.append(pump_settings[key])
+        bad_values = False
+        for var in self.pump_group.get_vars():
+            if var.get_mapped() is not None and var.get_mapped() in prev_values:
+                var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+                var.widget.after(1000,lambda *args: var.widget.configure(fg_color=ApplicationTheme.MANUAL_PUMP_COLOR))
+                bad_values = True
 
-        base_duty = self.__base_duty_var.get()
-        rf_time = self.__rf_time_var.get()
-        rf_duty = self.__rf_duty_var.get()
-        rf_percent = self.__rf_percent_var.get()
+            prev_values.append(var.get_mapped())
+        if bad_values:
+            return
 
-        valid_input = [_validate_duty(base_duty,allow_empty=False),_validate_time(rf_time,allow_empty=False),_validate_duty(rf_duty,allow_empty=False),_validate_percent(rf_percent,allow_empty=False)]
+        is_valid = [var.is_valid() for var in self.control_group.get_vars()]
 
-        if all(valid_input):
-            refill_settings = {
-                Settings.BASE_CONTROL_DUTY: int(base_duty),
-                Settings.REFILL_TIME: int(rf_time),
-                Settings.REFILL_DUTY: int(rf_duty),
-                Settings.REFILL_PERCENTAGE_TRIGGER: int(rf_percent)
-            }
+        if all(is_valid):
+            refill_settings = {var.setting:var.get_mapped() for var in self.control_group.get_vars()}
             modifications = modify_settings({**pump_settings,**refill_settings})
             self.destroy_successfully(modifications)
         else:
-            for i in range(0,len(valid_input)):
-                entry_bgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if valid_input[i] else ApplicationTheme.ERROR_COLOR
-                self.__refill_entries[i].configure(border_color=entry_bgcolor)
+            for var in self.control_group.get_vars():
+                entry_bgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
+                var.widget.configure(border_color=entry_bgcolor)
 
 def _json2str(json_result: PumpNames|None) -> str:
     if json_result is None:
@@ -300,39 +438,6 @@ def _str2json(str_result: str) -> PumpNames|None:
     else:
         out = PumpNames(res)
     return out
-
-def _validate_time(timestr: str, allow_empty = True):
-    if timestr == "":
-        return allow_empty
-    try:
-        t = int(timestr)
-        if t>0:
-            return True
-        return False
-    except:
-        return False
-    
-def _validate_duty(dutystr: str, allow_empty = True):
-    if dutystr == "":
-        return allow_empty
-    try:
-        d = int(dutystr)
-        if d>=0 and d<=255:
-            return True
-        return False
-    except:
-        return False
-    
-def _validate_percent(percentstr: str, allow_empty = True):
-    if percentstr == "":
-        return allow_empty
-    try:
-        p = int(percentstr)
-        if p>0 and p<100:
-            return True
-        return False
-    except:
-        return False
 
 Rect = tuple[int,int,int,int] 
 
@@ -350,7 +455,8 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         self.__cv2_exit_condition = threading.Event()
         self.__unregister_exit_condition: Callable[[None],None]|None = None
         self.__cv2_shared_state: SharedState[tuple[Rect,Rect,Rect]] = SharedState()
-        self.__cv2_thread: threading.Thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state])
+        self.__error_state: SharedState[BaseException] = SharedState()
+        self.__cv2_thread: threading.Thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state,self.__error_state])
 
         self.__r1: tuple[int,int,int,int]|None = None
         self.__r2: tuple[int,int,int,int]|None = None
@@ -400,8 +506,9 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
             self.__cv2_thread.start()
             self.__unregister_exit_condition = self._add_event(self.__cv2_exit_condition,self.__check_regions)
 
-    def __bad_regions(self):
-            self.lblvar.set("Please select exactly 3 regions")
+    def __bad_regions(self,error: BaseException | None):
+            errormsg = str(error) if error else "Please select exactly 3 regions"
+            self.lblvar.set(errormsg)
             self.msg_lbl.configure(text_color=ApplicationTheme.ERROR_COLOR)
             self.confirm_button.configure(state=ctk.NORMAL)
 
@@ -415,13 +522,14 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
     def __check_regions(self):
         self.__teardown_thread()
         rects = self.__cv2_shared_state.get_value()
-        if rects is not None and len(rects) == 3:
+        error = self.__error_state.get_value()
+        if rects is not None and len(rects) == 3 and error is None:
             self.__r1 = rects[0]
             self.__r2 = rects[1]
             self.__h = rects[2]
             self.__select_volumes()
         else:
-            self.__bad_regions()
+            self.__bad_regions(error)
 
     def __select_volumes(self):
         self.initial_frame.pack_forget()
@@ -447,11 +555,11 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
                 pass
             self.__cv2_thread.join()
             self.__cv2_exit_condition.clear()
-        self.__cv2_thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state])
+        self.__cv2_thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state,self.__error_state])
 
     def __confirm_volumes(self):
         ref_vol_str = self.refvar.get()
-        if ref_vol_str != "" and float(ref_vol_str)>0:
+        if _validate_volume(ref_vol_str,allow_empty=False):
             self.__teardown_thread()
             self.destroy_successfully(self.__r1,self.__r2,self.__h,float(ref_vol_str))
         else:
@@ -461,11 +569,12 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         super().destroy()
         self.__teardown_thread()
 
-def _select_regions(capture_device, exit_condition: threading.Event, shared_state: SharedState[tuple[Rect,Rect,Rect]]):
+def _select_regions(capture_device: Capture, exit_condition: threading.Event, shared_state: SharedState[tuple[Rect,Rect,Rect]],error_state:SharedState[BaseException]):
     try:
         img = capture(capture_device)
-    except CaptureException:
+    except CaptureException as ce:
         exit_condition.set()
+        error_state.set_value(ce)
     if exit_condition.is_set():
         return
     cv2.namedWindow("Select Regions")
@@ -475,41 +584,19 @@ def _select_regions(capture_device, exit_condition: threading.Event, shared_stat
     try:
         rects = cv2.selectROIs("Select Regions",img)
         if len(rects) != 3:
-            raise Exception("Exactly 3 regions were not selected")
-        shared_state.set_value(rects)
+            error_state.set_value(_ROIException("Exactly 3 regions were not selected"))
+        else:
+            shared_state.set_value(rects)
     finally:
         exit_condition.set()
         cv2.destroyAllWindows()
         return
-
-def _validate_device(p: str, allow_empty = True):
-    try:
-        nump = int(p)
-        if nump >= 0:
-            return True
-        return False
-    except ValueError:
-        if p == "" and allow_empty:
-            return True
-        return False
-    
-def _validate_volume(p: str):
-    try:
-        nump = float(p)
-        if nump >= 0:
-            return True
-        return False
-    except ValueError:
-        if p == "":
-            return True
-        return False
-
-WidgetGridInfo = tuple[ctk.CTkBaseClass,int,int]
+class _ROIException(BaseException): ...
 
 class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
 
-    __NUM_CAMERA_SETTINGS = 2
+    __NUM_CAMERA_SETTINGS = 3
     ALERT_TITLE = "Level Sensing Settings"
 
     def __init__(self, master: ctk.CTk, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
@@ -524,110 +611,96 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         prev_average_period: float = all_settings[Settings.AVERAGE_WINDOW_WIDTH]
         prev_stabilisation_period = all_settings[Settings.LEVEL_STABILISATION_PERIOD]
         prev_backend: CaptureBackend = all_settings[Settings.CAMERA_BACKEND]
+        prev_rescale_factor: float = all_settings[Settings.IMAGE_RESCALE_FACTOR]
 
-        # frame for holding camera-related settings
-        camera_frame = ctk.CTkFrame(self)
-        camera_title_label = ctk.CTkLabel(camera_frame,text="Camera Settings")
-        camera_title_label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
-        # frame for holding computer vision settings
-        cv_frame = ctk.CTkFrame(self)
-        cv_title_label = ctk.CTkLabel(cv_frame,text="Computer Vision Settings")
-        cv_title_label.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
-
-        P = TypeVar("P")
+        segment_frames = self.generate_layout("Camera Settings","Computer Vision Settings",confirm_command=self.__confirm_selections)
+        camera_frame = segment_frames[0]
+        cv_frame = segment_frames[1]
         
-        
-        interface_ctkvar = ctk.StringVar(value=prev_interface)
-        self.interface_var = _SettingVariable[str](interface_ctkvar, Settings.CAMERA_INTERFACE_MODULE)
-        interface_lbl = ctk.CTkLabel(camera_frame,text="Camera Module Interface")
-        interface_dropdown = ctk.CTkOptionMenu(camera_frame,variable=interface_ctkvar,values=Capture.SUPPORTED_INTERFACES())
-        self.interface_var.widget = interface_dropdown
-        interface_lbl.grid(row=1,column=0,padx=10,pady=5,sticky="nsew")
-        interface_dropdown.grid(row=1,column=1,padx=10,pady=5,sticky="nsew")
+        self.rescale_var = _make_and_grid(_make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,1,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
+        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,2,values=Capture.SUPPORTED_INTERFACES)
         self.interface_var.trace_add(self.__interface_changed)
 
-        self.sense_period_var,sense_period_entry = self._make_and_grid(cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),_validate_time_float,1,units="s",map_fun=float)
-        self.average_var,average_entry = self._make_and_grid(cv_frame,"Moving Average Period",Settings.AVERAGE_WINDOW_WIDTH,str(prev_average_period),_validate_time_float,2,units = "s",map_fun=float)
-        self.stabilisation_var, stabilisation_entry = self._make_and_grid(cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD,str(prev_stabilisation_period),_validate_time_float,3,units="s",map_fun=float)
+        self.sense_period_var = _make_and_grid(_make_entry,cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),1,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
+        self.average_var = _make_and_grid(_make_entry,cv_frame,"Moving Average Period",Settings.AVERAGE_WINDOW_WIDTH, str(prev_average_period),2,entry_validator = _validate_time_float,units = "s",map_fun=float,on_return=self.__confirm_selections)
+        self.stabilisation_var = _make_and_grid(_make_entry,cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD, str(prev_stabilisation_period),3,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
 
-
-        #----------CV2 Settings-------------
-        # exposure selection auto/manual switch
-        exposure_method_label = ctk.CTkLabel(camera_frame,text="Camera Exposure Determination")
-        exposure_method_ctkvar = ctk.StringVar(value="Auto" if prev_auto_exposure else "Manual")
-        self.exposure_method_var = _SettingVariable(exposure_method_ctkvar,Settings.AUTO_EXPOSURE,map_fun= lambda str_in: str_in=="Auto")
-        exposure_method_button = ctk.CTkSegmentedButton(camera_frame,values=["Auto","Manual"],variable=exposure_method_ctkvar,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,command=self.__exposure_method_changed)
-        self.exposure_method_var.widget = exposure_method_button
-
-        # backend selection dropdown menu
-        cv2_backend_label = ctk.CTkLabel(camera_frame,text="Camera Backend Provider")
-        cv2_available_backends = [be.value for be in CV2Capture.get_backends()]
-        cv2_display_backend = prev_backend.value if prev_backend.value in cv2_available_backends else CaptureBackend.ANY.value
-        cv2_backend_ctkvar = ctk.StringVar(value = cv2_display_backend)
-        self.cv2_backend_var = _SettingVariable(cv2_backend_ctkvar,Settings.CAMERA_BACKEND,map_fun=lambda be: CaptureBackend(be))
-        cv2_backend_menu = ctk.CTkOptionMenu(camera_frame,variable=cv2_backend_ctkvar,values=cv2_available_backends)
-        self.cv2_backend_var.widget = cv2_backend_menu
-
-        # exposure time entry box
-        self.exposure_time_label,self.exposure_time_var,self.exposure_time_entry,self.exposure_time_entryframe= self._make_entry(camera_frame,"Manual Exposure Time",Settings.EXPOSURE_TIME,str(prev_exposure_time),_validate_exposure)
+        self.permanent_vars = [self.rescale_var,self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
         
-        # video device number entry box
-        vd_label,self.vd_var,vd_entry,vd_entryframe = self._make_entry(camera_frame,"Camera Device Number",Settings.VIDEO_DEVICE,str(prev_vd),_validate_device,map_fun=int)
+        #----------CV2 Settings-------------
+        self.cv2_widget_group = _WidgetGroup(initial_row=self.__NUM_CAMERA_SETTINGS)
 
-        self.cv2_widgets: WidgetGridInfo = [(vd_label,self.__NUM_CAMERA_SETTINGS,0),
-                            (vd_entryframe,self.__NUM_CAMERA_SETTINGS,1),
-                            (cv2_backend_label,self.__NUM_CAMERA_SETTINGS+1,0),
-                            (cv2_backend_menu,self.__NUM_CAMERA_SETTINGS+1,1),
-                            (exposure_method_label,self.__NUM_CAMERA_SETTINGS+2,0),
-                            (exposure_method_button,self.__NUM_CAMERA_SETTINGS+2,1),
-                            (self.exposure_time_label,self.__NUM_CAMERA_SETTINGS+3,0),
-                            (self.exposure_time_entryframe,self.__NUM_CAMERA_SETTINGS+3,1)]
-        self.cv2_vars = [self.vd_var,self.cv2_backend_var,self.exposure_method_var,self.exposure_time_var]
+        cv2_available_backends = [be.value for be in CV2Capture.get_backends()]
+        cv2_display_backend = prev_backend.value if prev_backend.value in cv2_available_backends else cv2_available_backends[0]
+        self.cv2_backend_var = _make_and_group(_make_menu,
+                                               camera_frame,
+                                               "Camera Backend Provider",
+                                               Settings.CAMERA_BACKEND,
+                                               cv2_display_backend,
+                                               self.cv2_widget_group,
+                                               map_fun=lambda be: CaptureBackend(be),
+                                               values=cv2_available_backends)
 
+        self.cv2_vd_var = _make_and_group(_make_entry,
+                                          camera_frame,
+                                          "Camera Device Number",
+                                          Settings.VIDEO_DEVICE,
+                                          prev_vd,
+                                          self.cv2_widget_group,
+                                          map_fun=int,
+                                          entry_validator=_validate_device,
+                                          )
+        
+        self.cv2_exposure_method_var = _make_and_group(_make_segmented_button,
+                                                       camera_frame,
+                                                       "Camera Exposure Determination",
+                                                       Settings.AUTO_EXPOSURE,
+                                                       "Auto" if prev_auto_exposure else "Manual",
+                                                       self.cv2_widget_group,
+                                                       map_fun= lambda str_in: str_in == "Auto",
+                                                       values=["Auto","Manual"],
+                                                       command=self.__exposure_method_changed
+                                                       )
+        current_row = self.cv2_widget_group.current_row
+        self.cv2_manual_exposure_group = _WidgetGroup(initial_row=current_row+1,parent=self.cv2_widget_group)
+        self.exposure_time_var = _make_and_group(_make_entry,
+                                                 camera_frame,
+                                                 "Manual Exposure Time",
+                                                 Settings.EXPOSURE_TIME,
+                                                 str(prev_exposure_time),
+                                                 self.cv2_manual_exposure_group,
+                                                 entry_validator=_validate_exposure)
+        
         #-----------Pygame Settings--------------
+        self.pygame_widget_group = _WidgetGroup(initial_row=self.__NUM_CAMERA_SETTINGS)
         # backend selection dropdown menu
-        pygame_backend_label = ctk.CTkLabel(camera_frame,text="Camera Backend Provider")
         pygame_available_backends = [be.value for be in PygameCapture.get_backends()]
         pygame_display_backend = prev_backend.value if prev_backend.value in pygame_available_backends else CaptureBackend.ANY.value
-        pygame_backend_ctkvar = ctk.StringVar(value=pygame_display_backend)
-        self.pygame_backend_var = _SettingVariable(pygame_backend_ctkvar,Settings.CAMERA_BACKEND,map_fun=lambda str_in: CaptureBackend(str_in))
-        self.pygame_backend_menu = ctk.CTkOptionMenu(camera_frame,variable=pygame_backend_ctkvar,values = pygame_available_backends)
-        self.pygame_backend_var.widget = self.pygame_backend_menu
+        self.pygame_backend_var = _make_and_group(_make_menu,
+                                                  camera_frame,
+                                                  "Camera Backend Provider",
+                                                  Settings.CAMERA_BACKEND,
+                                                  pygame_display_backend,
+                                                  self.pygame_widget_group,
+                                                  map_fun=lambda str_in: CaptureBackend(str_in),
+                                                  values=pygame_available_backends)
         self.pygame_backend_var.trace_add(self.__maybe_refresh_pygame_cameras)
 
         # camera selection dropdown menu
-        pgvd_label = ctk.CTkLabel(camera_frame,text="Camera Device")
-        current_list = PygameCapture.get_cameras(backend=CaptureBackend(pygame_display_backend))
-        selected_device = current_list[prev_vd] if prev_vd < len(current_list) else current_list[0]
-        pgvd_ctkvar = ctk.StringVar(value=selected_device)
-        self.pgvd_var = _SettingVariable(pgvd_ctkvar,Settings.VIDEO_DEVICE,map_fun=self.__cast_pygame_camera,validator=self.__validate_pygame_camera)
-        pgvd_frame = ctk.CTkFrame(camera_frame)
-        self.pgvd_menu = ctk.CTkOptionMenu(pgvd_frame,variable=pgvd_ctkvar,values=current_list)
-        pygame_refresh = ctk.CTkButton(pgvd_frame,text="Refresh",command=self.__refresh_pygame_cameras)
-        self.pgvd_menu.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-        pygame_refresh.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
-        self.pgvd_var.widget = self.pgvd_menu
+        selected_device = "Loading..."
+        current_list = ["Loading..."]
+        self.pygame_vd_var = _make_and_group(_make_menu,
+                                             camera_frame,
+                                             "Camera Device",
+                                             Settings.VIDEO_DEVICE,
+                                             selected_device,
+                                             self.pygame_widget_group,
+                                             map_fun = self.__cast_pygame_camera,
+                                             values=current_list,
+                                             refresh_function=self.__refresh_pygame_cameras)
 
-        self.pygame_widgets: WidgetGridInfo = [(pygame_backend_label,self.__NUM_CAMERA_SETTINGS,0),
-                                               (self.pygame_backend_menu,self.__NUM_CAMERA_SETTINGS,1),
-                                               (pgvd_label,self.__NUM_CAMERA_SETTINGS+1,0),
-                                               (pgvd_frame,self.__NUM_CAMERA_SETTINGS+1,1)]
-        self.pygame_vars = [self.pygame_backend_var,self.pgvd_var]
+        self.widget_dict: dict[str,_WidgetGroup] = {"OpenCV": self.cv2_widget_group,"Pygame":self.pygame_widget_group}
 
-        self.permanent_vars = [self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
-
-        self.widget_dict: dict[str,tuple[WidgetGridInfo,list[_SettingVariable]]] = {"OpenCV": (self.cv2_widgets,self.cv2_vars),"Pygame": (self.pygame_widgets,self.pygame_vars)}
-
-        self.visible_vars: list[_SettingVariable] = []
-
-        # self.columnconfigure([0,1],weight=1,uniform="rootcol")
-        camera_frame.grid(row=0,column=0,padx=10,pady=5,sticky="nsew")
-        cv_frame.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
-
-        confirm_button = ctk.CTkButton(self,text="Confirm",command=self.__confirm_selections)
-        cancel_button = ctk.CTkButton(self,text="Cancel",command=self.destroy)
-        confirm_button.grid(row=1,column=1,padx=10,pady=5,sticky="nse")
-        cancel_button.grid(row=1,column=0,padx=10,pady=5,sticky="nsw")
         self.__interface_changed()
 
     def __validate_pygame_camera(self,selected_camera):
@@ -641,99 +714,149 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         return DEFAULT_SETTINGS[Settings.VIDEO_DEVICE]
     def __maybe_refresh_pygame_cameras(self,*args):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
-        selected_camera = self.pgvd_var.get()
+        selected_camera = self.pygame_vd_var.get()
         try:
+            self.pygame_vd_var.widget.configure(values=["Loading..."])
             new_cameras = PygameCapture.get_cameras(backend=selected_backend)
-            self.pgvd_menu.configure(values=new_cameras)
+            self.pygame_vd_var.widget.configure(values=new_cameras)
             if selected_camera not in new_cameras:
-                self.pgvd_var.set(new_cameras[0])
+                self.pygame_vd_var.widget.set(new_cameras[0])
             
         except RuntimeError:
             self.pygame_backend_var.set(CaptureBackend.ANY.value)
-            self.pygame_backend_menu.configure(fg_color = ApplicationTheme.ERROR_COLOR)
-            self.after(1000,lambda: self.pygame_backend_menu.configure(fg_color = ApplicationTheme.MANUAL_PUMP_COLOR))
-            self.pygame_backend_menu.set(CaptureBackend.ANY.value)
+            self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+            self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
+            self.pygame_backend_var.widget.set(CaptureBackend.ANY.value)
     def __refresh_pygame_cameras(self):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
         try:
-            self.pgvd_menu.configure(values=PygameCapture.get_cameras(force_newlist=True,backend=selected_backend))
+            self.pygame_vd_var.widget.configure(values=PygameCapture.get_cameras(force_newlist=True,backend=selected_backend))
         except RuntimeError:
             self.pygame_backend_var.set(CaptureBackend.ANY.value)
-        
+    def __pygame_refresh_with_label(self):
+        menu = self.cv2_vd_var.widget
+        loading_label = ctk.CTkLabel(menu,text="Loading...")
+        loading_label.place(x=0, y=0, anchor="nw", relwidth=1.0, relheight=1.0)
+        def process_refresh(*args):
+            self.__maybe_refresh_pygame_cameras()
+            loading_label.destroy()
+        self.after(500,process_refresh)
+
     def __interface_changed(self,*args):
         new_interface = self.interface_var.get()
-        widgets_of_interest = self.widget_dict[new_interface][0]
-        vars_of_interest = self.widget_dict[new_interface][1]
-
-        for interface in self.widget_dict.keys():
-            if interface != new_interface:
-                old_widgets_info = self.widget_dict[interface][0]
-                for widgetgridinfo in old_widgets_info:
-                    curr_widget: ctk.CTkBaseClass = widgetgridinfo[0]
-                    curr_widget.grid_remove()
-        for newgridinfo in widgets_of_interest:
-            curr_widget: ctk.CTkBaseClass = newgridinfo[0]
-            curr_row: int = newgridinfo[1]
-            curr_column: int = newgridinfo[2]
-            curr_widget.grid(row=curr_row,column=curr_column,padx=10,pady=5,sticky="nsew")
-        self.visible_vars = [*self.permanent_vars,*vars_of_interest]
+        group_of_interest = self.widget_dict[new_interface]
+        for interface_group in self.widget_dict.values():
+            if interface_group != group_of_interest:
+                interface_group.hide()
+        group_of_interest.show()
+        self.visible_group = group_of_interest
         if new_interface == "OpenCV":
             self.__exposure_method_changed()
+        elif new_interface == "Pygame":
+            call_will_block = PygameCapture.will_block(CaptureBackend(self.pygame_backend_var.get()))
+            if call_will_block:
+                self.__pygame_refresh_with_label()
+            else:
+                self.__maybe_refresh_pygame_cameras()
+
+    def __exposure_method_changed(self,*args):
+        new_method = self.cv2_exposure_method_var.get()
+        if new_method == "Auto":
+            self.cv2_manual_exposure_group.hide()
+            self.exposure_time_var.widget.configure(border_color=ApplicationTheme.MANUAL_PUMP_COLOR)
+        else:
+            self.cv2_manual_exposure_group.show()
 
     def __confirm_selections(self):
 
         all_valid = True
-        for var in self.visible_vars:
+        temp_vars = self.visible_group.get_vars()
+        all_vars = [*self.permanent_vars,*temp_vars]
+        for var in all_vars:
             if not var.is_valid():
                 all_valid = False
                 break
         if all_valid:
-            all_settings = {var.setting:var.get_mapped() for var in self.visible_vars}
+            all_settings = {var.setting:var.get_mapped() for var in all_vars}
             modifications = modify_settings(all_settings)
             self.destroy_successfully(modifications)
             return
 
-        for var in self.visible_vars:
+        for var in all_vars:
             if isinstance(var.widget,ctk.CTkEntry):
                 entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
                 var.widget.configure(border_color=entry_fgcolor)
 
-    def __exposure_method_changed(self,*args):
-        new_method = self.exposure_method_var.get()
-        if new_method == "Auto":
-            self.exposure_time_label.grid_remove()
-            self.exposure_time_entryframe.grid_remove()
-            try:
-                self.visible_vars.remove(self.exposure_time_var)
-            except Exception as e:
-                print(e)
-            self.exposure_time_entry.configure(border_color=ApplicationTheme.MANUAL_PUMP_COLOR)
-        else:
-            exposure_settings_row = self.__NUM_CAMERA_SETTINGS+3
-            self.exposure_time_label.grid(row=exposure_settings_row,column=0,padx=10,pady=5,sticky="nsew")
-            self.exposure_time_entryframe.grid(row=exposure_settings_row,column=1,padx=10,pady=5,sticky="nsew")
+class _WidgetGroup:
+    def __init__(self,initial_row = 0, widgets: list[ctk.CTkBaseClass] = [], rows: list[int] = [], columns: list[int] = [], vars: list["_SettingVariable"] = [],children: list["_WidgetGroup"]|None = [], parent: "_WidgetGroup" = None):
+        max_index = min(len(widgets),len(rows),len(columns))
+        self.group: list[tuple[ctk.CTkBaseClass,int,int]] = copy.copy([[widgets[i],rows[i],columns[i]] for i in range(0,max_index)])
+        self.current_row = initial_row
+        self.is_displayed = False
+        self.__is_showing = False
+        self.__children = copy.copy(children)
+        self.__vars = copy.copy(vars)
+        self.__parent: _WidgetGroup|None = None
+        if parent is not None:
+            parent.add_child(self)
 
-    def _make_entry(self,frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],units: str|None = None,map_fun: Callable[[str],Any]|None = None) -> tuple[ctk.CTkLabel,"_SettingVariable",ctk.CTkEntry,ctk.CTkFrame]:
-        lbl = ctk.CTkLabel(frame,text=name)
-        ctkvar = ctk.StringVar(value=initial_value)
-        var = _SettingVariable(ctkvar,setting,validator=lambda val: entry_validator(val,allow_empty=False),map_fun=map_fun)
-        entryparent = ctk.CTkFrame(frame)
-        entry = ctk.CTkEntry(entryparent,textvariable=ctkvar, validate='key', validatecommand = (frame.register(entry_validator),"%P"))
-        entry.bind("<Return>",lambda *args: self.__confirm_selections())
-        var.widget = entry
-        if units:
-            entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
-            unit_label = ctk.CTkLabel(entryparent,text=units)
-            unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
+    def add_at_position(self,widget: ctk.CTkBaseClass, row: int, column: int):
+        self.group.append([widget,row,column])
+    
+    def add_widget(self,widget: ctk.CTkBaseClass, column: int):
+        self.group.append([widget,self.current_row,column])
+
+    def nextrow(self):
+        self.current_row += 1
+    
+    def show(self):
+        self.__is_showing = True
+        # only display if the parent group is displayed
+        if self.__parent is None or self.__parent.__is_showing:
+            # display all child groups
+            for child in self.__children:
+                if child.__is_showing:
+                    child.show()
+            # display all widgets in this group
+            for widget_info in self.group:
+                widget = widget_info[0]
+                row = widget_info[1]
+                column = widget_info[2]
+                widget.grid(row=row,column = column, padx=10, pady=5,sticky="nsew")
+    
+    def hide(self):
+        self.__hide_with_state()
+        self.__is_showing = False
+    
+    def __hide_with_state(self):
+        if not self.__is_showing:
+            return
+        # hide all child groups
+        for child in self.__children:
+            child.__hide_with_state()
+        # hide all widgets in this group
+        for widget_info in self.group:
+            widget_info[0].grid_remove()
+
+    def add_child(self,child: "_WidgetGroup"):
+        if child.__parent is None:
+            self.__children.append(child)
+            child.__parent = self
         else:
-            entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
-        return lbl,var,entry,entryparent
-            
-    def _make_and_grid(self,frame: ctk.CTkFrame,name: str, setting: Settings, initial_value: str,entry_validator: Callable[...,bool],grid_row: int,units: str|None = None, map_fun: Callable[[str],Any]|None = None) -> tuple["_SettingVariable",ctk.CTkEntry]:
-        lbl,var,entry,entryframe = self._make_entry(frame,name,setting,initial_value,entry_validator,units=units,map_fun=map_fun)
-        lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
-        entryframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
-        return var,entry
+            raise Exception(f"Group {child} already has a parent group!")
+    
+    def add_var(self,var: "_SettingVariable"):
+        if var not in self.__vars:
+            self.__vars.append(var)
+    
+    def get_vars(self) -> list["_SettingVariable"]:
+        if not self.__is_showing:
+            return []
+        vars_out = self.__vars
+        for child in self.__children:
+            childvars = child.get_vars()
+            vars_out = [*vars_out,*childvars]
+        return vars_out
 
 T = TypeVar("T")
 class _SettingVariable(Generic[T]):
@@ -760,24 +883,207 @@ class _SettingVariable(Generic[T]):
     def setting(self) -> Settings:
         return self.__setting
 
+class _MakerFunction(Protocol):
+    def __call__(self,frame: ctk.CTkFrame, name: str, settings: Settings, initial_value: str, **kwargs) -> tuple[ctk.CTkLabel,"_SettingVariable",ctk.CTkFrame]: ...
+
+def _makerfunction(fn: _MakerFunction) -> _MakerFunction: return fn
+
+@_makerfunction
+def _make_entry(frame: ctk.CTkFrame,
+                name: str, 
+                setting: Settings, 
+                initial_value: str,
+                entry_validator: Callable[...,bool] = lambda *args,**kwargs: True,
+                units: str|None = None,
+                map_fun: Callable[[str],Any]|None = None, 
+                on_return: Callable[[None],None] = None,
+                **kwargs
+                ) -> tuple[ctk.CTkLabel,"_SettingVariable",ctk.CTkFrame]:
+    lbl = ctk.CTkLabel(frame,text=name)
+    ctkvar = ctk.StringVar(value=initial_value)
+    var = _SettingVariable(ctkvar,setting,validator=lambda val: entry_validator(val,allow_empty=False),map_fun=map_fun)
+    entryparent = ctk.CTkFrame(frame)
+    entry = ctk.CTkEntry(entryparent,textvariable=ctkvar, validate='key', validatecommand = (frame.register(entry_validator),"%P"))
+    entry.bind("<Return>",lambda *args: on_return() if on_return else None)
+    var.widget = entry
+    frame.columnconfigure([0],weight=1)
+    if units:
+        entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
+        unit_label = ctk.CTkLabel(entryparent,text=units)
+        unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
+    else:
+        entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
+    return lbl,var,entryparent
+
+@_makerfunction
+def _make_menu(frame: ctk.CTkFrame,
+                name: str, 
+                setting: Settings, 
+                initial_value: str,
+                map_fun: Callable[[str],Any] | None = None,
+                values: list[str] = ["Please Select a Value"],
+                refresh_function: Callable[[None],None] | None = None
+                ) -> tuple[ctk.CTkLabel,"_SettingVariable",ctk.CTkFrame]:
+    lbl = ctk.CTkLabel(frame,text=name)
+    ctkvar = ctk.StringVar(value=initial_value)
+    var = _SettingVariable(ctkvar,setting,map_fun=map_fun)
+    menuparent = ctk.CTkFrame(frame,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
+    menu = ctk.CTkOptionMenu(menuparent,variable=ctkvar,values=values,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
+    var.widget=menu
+    ctkvar.set(initial_value)
+    if refresh_function:
+        menuparent.columnconfigure([0],weight=1)
+        fullpath = Path().absolute() / "ui_pages/ui_widgets/assets/refresh_label.png"
+        pilimg = Image.open(fullpath.as_posix())
+        refresh_image = ctk.CTkImage(light_image=pilimg,size=(20,20))
+        refresh_button = ctk.CTkButton(menuparent,text=None,image=refresh_image,command=refresh_function,width=21)
+        menu.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
+        refresh_button.grid(row=0,column=1,padx=(10,0),pady=0,sticky="nse")
+    else:
+        menuparent.columnconfigure(0,weight=1)
+        menu.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
+    return lbl,var,menuparent
+
+@_makerfunction
+def _make_segmented_button(frame: ctk.CTkFrame,
+                           name: str,
+                           setting: Settings,
+                           initial_value: str,
+                           map_fun: Callable[[str],None]|None = None,
+                           values: list[str] = ["Please Select a Value"],
+                           command: Callable[[None],None] = lambda: None,
+                           **kwargs
+                           ) -> tuple[ctk.CTkLabel,_SettingVariable,ctk.CTkFrame]:
+    lbl = ctk.CTkLabel(frame,text=name)
+    ctkvar = ctk.StringVar(value=initial_value)
+    var = _SettingVariable(ctkvar,setting,map_fun=map_fun)
+    segmentparent = ctk.CTkFrame(frame)
+    button = ctk.CTkSegmentedButton(segmentparent,variable=ctkvar,values=values,command=command)
+    segmentparent.columnconfigure(0,weight=1)
+    button.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
+    return lbl,var,segmentparent
+
+def _make_and_grid(maker_function: _MakerFunction,
+                   frame: ctk.CTkFrame,
+                   name: str, 
+                   setting: Settings,
+                   initial_value: str,
+                   grid_row: int,
+                   map_fun: Callable[[str],Any]|None = None,
+                   **kwargs) -> "_SettingVariable":
+    lbl,var,widgetframe = maker_function(frame,name,setting,initial_value,map_fun=map_fun,**kwargs)
+    lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
+    widgetframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
+    return var
+
+def _make_and_group(maker_function: _MakerFunction,
+                    frame: ctk.CTkFrame,
+                    name: str,
+                    setting: Settings,
+                    initial_value: str,
+                    group: "_WidgetGroup",
+                    map_fun: Callable [[str],Any] | None = None,
+                    **kwargs
+                    ) -> "_SettingVariable":
+    lbl,var,widgetframe = maker_function(frame,name,setting,initial_value,map_fun=map_fun,**kwargs)
+    group.add_widget(lbl,0)
+    group.add_widget(widgetframe,1)
+    group.add_var(var)
+    group.nextrow()
+    return var
 
 
+class _ValidatorFunction():
+    def __call__(a: str,allow_true = True) -> bool: ...
+
+def validator_function(fn: _ValidatorFunction) -> _ValidatorFunction: return fn
+
+@validator_function
+def _validate_device(p: str, allow_empty = True):
+    try:
+        nump = int(p)
+        if nump >= 0:
+            return True
+        return False
+    except ValueError:
+        if p == "" and allow_empty:
+            return True
+        return False
+@validator_function
+def _validate_volume(p: str,allow_empty = True):
+    try:
+        nump = float(p)
+        if nump > 0:
+            return True
+        if nump == 0 and allow_empty:
+            return True
+        return False
+    except ValueError:
+        if p == "" and allow_empty:
+            return True
+        return False
+@validator_function
 def _validate_time_float(timestr: str, allow_empty = True):
     if timestr == "":
         return allow_empty
     try:
         t = float(timestr)
-        if t>0:
+        if t>0 or (t==0 and allow_empty):
             return True
         return False
     except:
         return False
-
+@validator_function
 def _validate_exposure(exp: str, allow_empty: bool = True) -> bool:
     if exp in ("","-",".") and allow_empty:
         return True
     try:
         int(exp)
         return True
+    except:
+        return False
+@validator_function
+def _validate_time(timestr: str, allow_empty = True):
+    if timestr == "":
+        return allow_empty
+    try:
+        t = int(timestr)
+        if t>0:
+            return True
+        return False
+    except:
+        return False
+@validator_function
+def _validate_duty(dutystr: str, allow_empty = True):
+    if dutystr == "":
+        return allow_empty
+    try:
+        d = int(dutystr)
+        if d>=0 and d<=255:
+            return True
+        return False
+    except:
+        return False
+@validator_function
+def _validate_percent(percentstr: str, allow_empty = True):
+    if percentstr == "":
+        return allow_empty
+    try:
+        p = int(percentstr)
+        if p>0 and p<100:
+            return True
+        return False
+    except:
+        return False
+@validator_function
+def _validate_scale_factor(sf: str, allow_empty = True):
+    MAX_FACTOR = 10
+    if sf == "":
+        return allow_empty
+    try:
+        f = float(sf)
+        if f>(1/MAX_FACTOR) and f<MAX_FACTOR or (f>=0 and allow_empty):
+            return True
+        return False
     except:
         return False

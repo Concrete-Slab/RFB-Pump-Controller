@@ -199,10 +199,10 @@ class DataProcess(BaseProcess):
             self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.DATA)
         
 class ProcessName(Enum):
-    LEVEL = LevelProcess.get_instance()
-    """Process that reads the electrolyte reservoir levels"""
-    DATA = DataProcess.get_instance()
-    """Process that writes duties and levels to respective csv files during operation"""
     PID = PIDProcess.get_instance()
     """Process that runs the PID duty control feedback loop"""
+    DATA = DataProcess.get_instance()
+    """Process that writes duties and levels to respective csv files during operation"""
+    LEVEL = LevelProcess.get_instance()
+    """Process that reads the electrolyte reservoir levels"""
 
