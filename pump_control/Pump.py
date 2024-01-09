@@ -293,26 +293,28 @@ class Pump(AsyncRunner,Teardown):
         
         # first loop through the high priority pumps (in their order of hierarchy):
         for hpp in high_priority:
-            await self.__serial_interface.write(GenericInterface.format_duty(hpp.value,0))
+            await self.__close_without_error(hpp)
         
         # then do the low(er) priority pumps in any order
         for lpp in low_priority:
-            await self.__serial_interface.write(GenericInterface.format_duty(lpp.value,0))
+            await self.__close_without_error(lpp)
 
     def _async_teardowns(self) -> Iterable[Coroutine[None, None, None]]:
         setout: set[Coroutine[None,None,None]] = set()
-        for pump in PumpNames:
-            async def write_without_error(pmp: PumpNames):
-                try:
-                    await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
-                except InterfaceException:
-                    pass
-            setout.add(write_without_error(pump))
+        # for pump in PumpNames:
+            
+        #     setout.add(self.__close_without_error(pump))
+        setout.add(self.emergency_stop())
         return setout
     
     def _sync_teardown(self) -> None:
         self.__serial_interface.close()
-#TODO write code to start the PID and Level sensors
+
+    async def __close_without_error(self,pmp: PumpNames):
+                    try:
+                        await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
+                    except InterfaceException:
+                        pass
 
 def is_duty(duty: int):
     if duty >= 0 and duty <= 255:
