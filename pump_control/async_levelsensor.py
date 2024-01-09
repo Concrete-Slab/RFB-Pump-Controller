@@ -95,7 +95,7 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
             raise GeneratorException("Null values supplied to level sensor parameters")
         self.__indexAn = _get_indices(rect1)
         self.__indexCath = _get_indices(rect2)
-        self.__scale = vol_ref/rect_ref[3]
+        self.__scale = vol_ref/abs(rect_ref[3])
         self.__vc = Capture.from_settings()
         pass
 
