@@ -23,7 +23,7 @@ class CaptureBackend(Enum):
     CV2_DSHOW = "DirectShow (OpenCV)"
     CV2_QT = "QuickTime (OpenCV)"
 
-CV2_BACKENDS = set([CaptureBackend.CV2_MSMF,CaptureBackend.CV2_V4L2,CaptureBackend.CV2_VFW,CaptureBackend.CV2_WINRT,CaptureBackend.CV2_QT])
+CV2_BACKENDS = set([CaptureBackend.CV2_MSMF,CaptureBackend.CV2_V4L2,CaptureBackend.CV2_VFW,CaptureBackend.CV2_WINRT,CaptureBackend.CV2_QT,CaptureBackend.CV2_DSHOW])
 
 SETTINGS_FILENAME = "settings.json"
 
