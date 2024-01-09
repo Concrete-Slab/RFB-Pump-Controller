@@ -50,45 +50,16 @@ class Pump(AsyncRunner,Teardown):
 
         settings = read_settings()
 
-        
-
         self.__log_levels: bool = settings[Settings.LOG_LEVELS]
         self.__log_pid: bool = settings[Settings.LOG_PID]
         self.__log_speeds: bool = settings[Settings.LOG_SPEEDS]
-
-        anolyte_pump: PumpNames|None = settings[Settings.ANOLYTE_PUMP]
-        catholyte_pump: PumpNames|None = settings[Settings.CATHOLYTE_PUMP]
-        anolyte_refill_pump: PumpNames|None = settings[Settings.ANOLYTE_REFILL_PUMP]
-        catholyte_refill_pump: PumpNames|None = settings[Settings.CATHOLYTE_REFILL_PUMP]
     
         self.logging_state: SharedState[bool] = SharedState[bool](False)
 
         self.__level_logging_state: SharedState[bool] = SharedState[bool](False)
         self.__pid_logging_state: SharedState[bool] = SharedState[bool](False)
         self.__polling_logging_state: SharedState[bool] = SharedState[bool](False)
-        # create the PID and level sense objects. The PID object operates on the shared state and sensed_event from the level object
-        # self.__level: LevelSensor = LevelSensor(logging_state=self.logging_state,rel_level_directory=rel_level_directory)
-        # self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state,
-        #                                         absolute_logging_path=settings[Settings.LEVEL_DIRECTORY],
-        #                                         capture_device=Capture.from_settings(),
-        #                                         sense_period=settings[Settings.SENSING_PERIOD],
-        #                                         stabilisation_period=settings[Settings.LEVEL_STABILISATION_PERIOD],
-        #                                         average_window_length=settings[Settings.AVERAGE_WINDOW_WIDTH])
-        # self.__pid: PIDRunner = PIDRunner(self.__level.state,
-        #                                   self.__serial_interface,
-        #                                   self.__level.sensed_event,
-        #                                   logging_state=self.__pid_logging_state,
-        #                                   absolute_logging_directory=settings[Settings.PID_DIRECTORY],
-        #                                   base_duty=settings[Settings.BASE_CONTROL_DUTY],
-        #                                   refill_time = settings[Settings.REFILL_TIME],
-        #                                   refill_duty = settings[Settings.REFILL_DUTY],
-        #                                   refill_percentage= settings[Settings.REFILL_PERCENTAGE_TRIGGER],
-        #                                   anolyte_pump = anolyte_pump,
-        #                                   catholyte_pump=catholyte_pump,
-        #                                   anolyte_refill_pump=anolyte_refill_pump,
-        #                                   catholyte_refill_pump=catholyte_refill_pump
-        #                                   )
-        # self.__poller: SerialReader = SerialReader(self.__serial_interface,logging_directory=settings[Settings.SPEED_DIRECTORY],logging_state=self.__polling_logging_state)
+        
         self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state)
         self.__pid: PIDRunner = PIDRunner(self.__level.state,
                                           self.__serial_interface,
@@ -184,12 +155,14 @@ class Pump(AsyncRunner,Teardown):
             pid_pumps = [pmp for pmp in self.__pid.get_pumps().values() if pmp is not None]
             if identifier in pid_pumps and self.__pid.is_running.value:
                 self.stop_pid()
-                state_dict: dict[PumpNames,int] = {}
-                for pidpmp in pid_pumps:
-                    if pidpmp is not None and pidpmp != identifier:
-                        self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp.value,0)))
-                        state_dict = {**state_dict, pidpmp: 0}
-                self.state.set_value(ActiveState(state_dict))
+                # state_dict: dict[PumpNames,int] = {}
+                # for pidpmp in pid_pumps:
+                #     if pidpmp is not None and pidpmp != identifier:
+                #         self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp.value,0)))
+                #         state_dict = {**state_dict, pidpmp: 0}
+                # self.state.set_value(ActiveState(state_dict))
+                pumps_to_stop = {pmpname for pmpname in pid_pumps if pmpname != identifier}
+                self.run_async(self.emergency_stop(pumps_to_stop))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_async(self.__serial_interface.write(writestr))
 
@@ -259,16 +232,17 @@ class Pump(AsyncRunner,Teardown):
         #TODO check race condition
         self.stop_event_loop()
 
-    async def emergency_stop(self):
+    async def emergency_stop(self,pumps: list[PumpNames]):
         """Stop all pumps. Since there is a mandatory delay between writes to the serial port, it is important to stop the pumps in the optimal order to minimise damage to the flow system. Pumps with high speeds are prioritised first. Within the high speed pumps, any pumps responsible for refilling the electrolyte reservoirs are handled first, followed by any electrolyte pumps. The low speed pumps are then handled in the same hierarchy"""
         LOW_PRIORITY_SPEED = 900
         # find the pumps that are low priority
-        current_duties = self.__poller.state.force_value()
-        if current_duties is not None:
+        all_speeds = self.__poller.state.force_value()
+        if all_speeds is not None:
+            current_speeds = {key:all_speeds[key] for key in all_speeds if key in pumps}
             low_priority = []
             high_priority = []
-            for pmp in current_duties.keys():
-                if current_duties[pmp] < LOW_PRIORITY_SPEED:
+            for pmp in pumps:
+                if current_speeds[pmp] < LOW_PRIORITY_SPEED:
                     low_priority.append(pmp)
                 else:
                     high_priority.append(pmp)
@@ -279,6 +253,7 @@ class Pump(AsyncRunner,Teardown):
         # now stop these pumps with order determined by pid system importance
         await self.__stop_with_hierarchy(high_priority)
         await self.__stop_with_hierarchy(low_priority)
+        self.state.set_value(ActiveState({pmpname:0 for pmpname in pumps}))
 
     async def __stop_with_hierarchy(self,pumps: list[PumpNames]):
         HIERARCHY = [Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP]
@@ -304,7 +279,7 @@ class Pump(AsyncRunner,Teardown):
         # for pump in PumpNames:
             
         #     setout.add(self.__close_without_error(pump))
-        setout.add(self.emergency_stop())
+        setout.add(self.emergency_stop(list(PumpNames)))
         return setout
     
     def _sync_teardown(self) -> None:
