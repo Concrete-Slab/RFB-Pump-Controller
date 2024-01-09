@@ -720,22 +720,38 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         selected_camera = self.pygame_vd_var.get()
         try:
             self.pygame_vd_var.widget.configure(values=["Loading..."])
+            self.pygame_vd_var.widget.set("Loading")
             new_cameras = PygameCapture.get_cameras(backend=selected_backend)
             self.pygame_vd_var.widget.configure(values=new_cameras)
             if selected_camera not in new_cameras:
                 self.pygame_vd_var.widget.set(new_cameras[0])
+            else:
+                self.pygame_vd_var.widget.set(selected_camera)
             
         except RuntimeError:
             self.pygame_backend_var.set(CaptureBackend.ANY.value)
             self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
             self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
             self.pygame_backend_var.widget.set(CaptureBackend.ANY.value)
+            self.__maybe_refresh_pygame_cameras()
     def __refresh_pygame_cameras(self):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
+        selected_camera = self.pygame_vd_var.get()
         try:
-            self.pygame_vd_var.widget.configure(values=PygameCapture.get_cameras(force_newlist=True,backend=selected_backend))
+            self.pygame_vd_var.widget.configure(values=["Loading..."])
+            self.pygame_vd_var.widget.set("Loading")
+            new_cameras = PygameCapture.get_cameras(force_newlist=True,backend=selected_backend)
+            self.pygame_vd_var.widget.configure(values=new_cameras)
+            if selected_camera not in new_cameras:
+                self.pygame_vd_var.widget.set(new_cameras[0])
+            else:
+                self.pygame_vd_var.widget.set(selected_camera)
         except RuntimeError:
             self.pygame_backend_var.set(CaptureBackend.ANY.value)
+            self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+            self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
+            self.pygame_backend_var.widget.set(CaptureBackend.ANY.value)
+            self.__maybe_refresh_pygame_cameras()
     def __pygame_refresh_with_label(self):
         menu = self.cv2_vd_var.widget
         loading_label = ctk.CTkLabel(menu,text="Loading...")
