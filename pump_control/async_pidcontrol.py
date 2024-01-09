@@ -84,23 +84,24 @@ class PIDRunner(Generator[Duties],Loggable):
         
         initial_request_time = time.time()
         current_time = initial_request_time
-        while current_time-initial_request_time > SERIAL_WRITE_PAUSE * PID_PAUSE_MARGIN:
+        while current_time-initial_request_time < SERIAL_WRITE_PAUSE * PID_PAUSE_MARGIN:
             levels_available = await self.__wait_for_levels()
             if not levels_available:
                 return
+            current_time = time.time()
 
-        while self.can_generate():
-            try:
-                await asyncio.wait_for(self.__level_event.wait(),timeout = PID_DATA_TIMEOUT)
-                if self.__refill_start_time is not None:
-                    # system is refilling, check to end refill in the case that new levels will take too long
-                    await self.__handle_refill(1,0)
-                break
-            except TimeoutError:
-                pass
-        if not self.can_generate():
-            return
-        self.__level_event.clear()
+        # while self.can_generate():
+        #     try:
+        #         await asyncio.wait_for(self.__level_event.wait(),timeout = PID_DATA_TIMEOUT)
+        #         if self.__refill_start_time is not None:
+        #             # system is refilling, check to end refill in the case that new levels will take too long
+        #             await self.__handle_refill(1,0)
+        #         break
+        #     except TimeoutError:
+        #         pass
+        # if not self.can_generate():
+        #     return
+        # self.__level_event.clear()
 
         # update the state of the datalogger
 
@@ -220,9 +221,7 @@ class PIDRunner(Generator[Duties],Loggable):
             self.__prev_duties[pmp] = duty
             await asyncio.sleep(1.5)
         return (pmp is not None)
-    
-
-    
+ 
     async def __wait_for_levels(self) -> bool:
         # The following block continuously checks for either:
         # - The level event to be set, indicating that new level data is available
@@ -233,7 +232,6 @@ class PIDRunner(Generator[Duties],Loggable):
         #       If the level sensor is shut down, this class has no way of knowing until _loop returns, so it will deadlock on the await line
         #       This block with an await timeout therefore allows the code to avoid this scenario and return early
         #       In such a case the function returns False
-        initial_request_time = time.time()
         while self.can_generate():
             try:
                 await asyncio.wait_for(self.__level_event.wait(),timeout = PID_DATA_TIMEOUT)
