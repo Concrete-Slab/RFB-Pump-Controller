@@ -103,8 +103,8 @@ class PortSelectPage(ctk.CTkFrame):
             self.ports = newPorts
         # convert ports to ports with description
         port_text = copy.copy(self.ports)
-        for i in range(1,len(port_text)):
-            port_text[i] = f"{self.ports[i]} - {descriptions[i-1]}"
+        for i in range(0,len(port_text)):
+            port_text[i] = f"{self.ports[i]} - {descriptions[i]}" if len(descriptions[i])>0 else self.ports[i] 
         
         # check if the previously selected port is still in the list
         prevSelection = self.selected_port.get()
