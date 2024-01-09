@@ -2,6 +2,9 @@ from contextlib import contextmanager
 from numpy import ndarray
 from .settings_interface import DEFAULT_SETTINGS, Settings, read_settings,CaptureBackend,CAMERA_SETTINGS, CV2_BACKENDS
 import cv2
+import os,sys
+# hides the "Hello from pygame" prompt in console
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
 from pygame.surface import Surface
 from pygame.surfarray import array3d
 import pygame.camera as camera
@@ -152,7 +155,8 @@ class PygameCapture(Capture):
         self.__pygame_backend = _backend_to_pygame(backend)
         try:
             camera.quit()
-            camera.init(self.__pygame_backend)
+            with suppress_stderr():
+                camera.init(self.__pygame_backend)
             if self.__pygame_backend == "OpenCV":
                 self.__instance = PygameCV2Camera(device=device_id,api_preference=_backend_to_cv2(self.__backend))
             elif self.__pygame_backend == "_camera (msmf)":
@@ -184,7 +188,8 @@ class PygameCapture(Capture):
         
         if not same_backend:
             camera.quit()
-            camera.init(backend=new_backend)
+            with suppress_stderr():
+                camera.init(backend=new_backend)
             recalculate = True
         elif force_newlist or cls.__recent_camera_list == []:
             recalculate = True
@@ -193,11 +198,13 @@ class PygameCapture(Capture):
         
         if recalculate:
             try:
-                cls.__recent_camera_list =  list(map(str,camera.list_cameras()))
+                with suppress_stdout():
+                    cls.__recent_camera_list =  list(map(str,camera.list_cameras()))
                 cls.__recent_backend = backend
             except RuntimeError:
                 camera.quit()
-                camera.init(backend= new_backend)
+                with suppress_stderr():
+                    camera.init(backend= new_backend)
                 return cls.get_cameras(force_newlist=force_newlist)
         return cls.__recent_camera_list
     
@@ -294,6 +301,28 @@ def capture(arg0: Capture|str,rescale = True) -> ndarray:
             img = vc.get_image(rescale=rescale)
         return img
     raise TypeError("Capture argument must be Capture or str")
+
+# solutions from Dave Smith's blog: suppresses the warnings from pygame and opencv
+# https://thesmithfam.org/blog/2012/10/25/temporarily-suppress-console-output-in-python/
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, "w") as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:  
+            yield
+        finally:
+            sys.stdout = old_stdout
+@contextmanager
+def suppress_stderr():
+    with open(os.devnull, "w") as devnull:
+        old_stderr = sys.stderr
+        sys.stderr = devnull
+        try:  
+            yield
+        finally:
+            sys.stderr = old_stderr
+
 
 # Pygame has a bug where sys is not imported. This class will override the faulty constructor:
 class PygameCV2Camera(_camera_opencv.Camera):
