@@ -649,6 +649,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
                                           self.cv2_widget_group,
                                           map_fun=int,
                                           entry_validator=_validate_device,
+                                          on_return = self.__confirm_selections
                                           )
         
         self.cv2_exposure_method_var = _make_and_group(_make_segmented_button,
@@ -669,7 +670,9 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
                                                  Settings.EXPOSURE_TIME,
                                                  str(prev_exposure_time),
                                                  self.cv2_manual_exposure_group,
-                                                 entry_validator=_validate_exposure)
+                                                 map_fun=int,
+                                                 entry_validator=_validate_exposure,
+                                                 on_return=self.__confirm_selections)
         
         #-----------Pygame Settings--------------
         self.pygame_widget_group = _WidgetGroup(initial_row=self.__NUM_CAMERA_SETTINGS)
