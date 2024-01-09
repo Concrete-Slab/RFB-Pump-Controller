@@ -112,6 +112,7 @@ class PortSelectPage(ctk.CTkFrame):
         if prevSelection in self.ports:
             index = self.ports.index(prevSelection)
             prevSelection = port_text[index]
+            self.selected_port.set(value=prevSelection)
         # if previous is not in new list, set to the start of the new list
         if prevSelection not in port_text:
             self.selected_port.set(value=port_text[0])

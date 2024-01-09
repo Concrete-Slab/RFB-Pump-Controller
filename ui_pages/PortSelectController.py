@@ -56,7 +56,8 @@ class PortSelectController(UIController):
 
             # everything has worked! save the settings if they are not debug-specific:
             modifications: dict[Settings,Any] = {}
-            if port in GenericInterface.get_serial_ports():
+            ports,_ = GenericInterface.get_serial_ports()
+            if port in ports:
                 modifications = {Settings.RECENT_SERIAL_PORT:str(port)}
             if interface_name in SUPPORTED_INTERFACES.keys():
                 modifications = {**modifications,Settings.RECENT_SERIAL_INTERFACE:str(interface_name)}
