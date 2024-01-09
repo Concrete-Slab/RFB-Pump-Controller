@@ -4,8 +4,8 @@ from .GenericInterface import GenericInterface
 from .DummyInterface import DummyInterface
 
 SUPPORTED_INTERFACES: dict[str, type[GenericInterface]] = {
-        "Node Forwarder": NodeInterface,
-        "Direct Serial": SerialInterface
+        "Direct Serial": SerialInterface,
+        "Node Forwarder": NodeInterface
     }
 
 DEBUG_SUPPORTED_INTERFACES: dict[str, type[GenericInterface]] = {
