@@ -95,12 +95,15 @@ class CV2Capture(Capture):
         if self.__instance:
             self.__instance.release()
 
-    def get_image(self) -> ndarray:
+    def get_image(self,rescale=True) -> ndarray:
         is_capture = False
         if self.__instance:
             is_capture, img = self.__instance.read()
             if not is_capture:
                 raise CaptureException("Image not retrieved from cv2.VideoCapture.read()")
+            if rescale:
+                imshape = img.shape
+                img = cv2.resize(img,(int(imshape[1]*self._scale_factor),int(imshape[0]*self._scale_factor)))
             return img
         raise CaptureException("Camera has not been opened")
 
