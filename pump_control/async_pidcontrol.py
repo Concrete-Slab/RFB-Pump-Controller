@@ -191,7 +191,7 @@ class PIDRunner(Generator[Duties],Loggable):
         return (anolyte_refillrate,catholyte_refillrate,duties)
 
     async def __handle_pid(self,control: int) -> tuple[int,int,Duties]:
-        if (control > 0):
+        if (control < 0):
             flowRateAn = self.__base_duty + control
             flowRateCath = self.__base_duty
         else:
