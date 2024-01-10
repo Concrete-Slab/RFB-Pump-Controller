@@ -74,7 +74,7 @@ class TimeAvg:
         new_timeavg.stream = old_timeavg.stream
         if len(old_timeavg.stream)<1:
             return new_timeavg
-        while new_timeavg.stream[-1] - new_timeavg.stream[0].time > delta_t:
+        while new_timeavg.stream[-1].time - new_timeavg.stream[0].time > delta_t:
             new_timeavg.stream.popleft()
         return new_timeavg
 
