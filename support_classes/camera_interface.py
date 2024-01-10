@@ -79,8 +79,8 @@ class Capture(ABC):
 SetupFunction = Callable[[int,bool,int,str],Capture]
 
 class CV2Capture(Capture):
-    def __init__(self, device_id, auto_exposure=DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time=DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], **kwargs) -> None:
-        super().__init__(device_id, auto_exposure, exposure_time, **kwargs)
+    def __init__(self, device_id, auto_exposure=DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time=DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], scale_factor = 1, **kwargs) -> None:
+        super().__init__(device_id, auto_exposure, exposure_time, scale_factor = scale_factor, **kwargs)
         self.__instance: cv2.VideoCapture|None = None
         self.__backend = backend if backend in self.get_backends() else CaptureBackend.ANY
         self.__cv2_backend = _backend_to_cv2(self.__backend)
@@ -149,8 +149,8 @@ class PygameCapture(Capture):
     __recent_camera_list = []
     __recent_backend = None
 
-    def __init__(self, device_id, auto_exposure=DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time=DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], **kwargs) -> None:
-        super().__init__(device_id, auto_exposure, exposure_time, **kwargs)
+    def __init__(self, device_id, auto_exposure=DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time=DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], scale_factor = 1, **kwargs) -> None:
+        super().__init__(device_id, auto_exposure, exposure_time, scale_factor=scale_factor, **kwargs)
         self.__backend = backend if backend in self.get_backends() else CaptureBackend.ANY
         self.__pygame_backend = _backend_to_pygame(backend)
         try:
@@ -290,7 +290,10 @@ def open_cv2_window(name: str):
         cv2.namedWindow(name)
         yield name
     finally:
-        cv2.destroyWindow(name)
+        try:
+            cv2.destroyWindow(name)
+        except:
+            pass
 
 def capture(arg0: Capture|str,rescale = True) -> ndarray:
     if isinstance(arg0,str):
