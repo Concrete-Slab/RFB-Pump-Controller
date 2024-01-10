@@ -690,8 +690,15 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         self.pygame_backend_var.trace_add(self.__maybe_refresh_pygame_cameras)
 
         # camera selection dropdown menu
-        selected_device = "Loading..."
-        current_list = ["Loading..."]
+        if prev_interface == "Pygame":
+            device_list = PygameCapture.get_cameras(backend=prev_backend)
+            if prev_vd < len(device_list):
+                selected_device = device_list[prev_vd]
+            else:
+                selected_device = device_list[0]
+        else:
+            selected_device = "Loading..."
+            device_list = ["Loading..."]
         self.pygame_vd_var = _make_and_group(_make_menu,
                                              camera_frame,
                                              "Camera Device",
@@ -699,7 +706,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
                                              selected_device,
                                              self.pygame_widget_group,
                                              map_fun = self.__cast_pygame_camera,
-                                             values=current_list,
+                                             values=device_list,
                                              refresh_function=self.__refresh_pygame_cameras)
 
         self.widget_dict: dict[str,_WidgetGroup] = {"OpenCV": self.cv2_widget_group,"Pygame":self.pygame_widget_group}
@@ -715,6 +722,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         if selected_camera in current_device_list:
             return current_device_list.index(selected_camera)
         return DEFAULT_SETTINGS[Settings.VIDEO_DEVICE]
+
     def __maybe_refresh_pygame_cameras(self,*args):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
         selected_camera = self.pygame_vd_var.get()
