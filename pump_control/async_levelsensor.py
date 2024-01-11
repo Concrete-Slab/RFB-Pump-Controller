@@ -1,7 +1,5 @@
 import math
 from support_classes import Generator, SharedState, GeneratorException, Loggable, Settings, DEFAULT_SETTINGS, Capture, CaptureException
-from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, CV2_KERNEL_SIZE, LEVEL_STABILISATION_PERIOD
-from .Buffer import Buffer
 from .timeavg import TimeAvg
 from typing import Any, Callable
 import cv2

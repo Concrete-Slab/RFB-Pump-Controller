@@ -8,7 +8,6 @@ from .async_levelsensor import LevelReading
 from serial_interface import GenericInterface
 import asyncio
 from support_classes import Generator,SharedState,Loggable, DEFAULT_SETTINGS, Settings, PumpNames
-from .PUMP_CONSTS import PID_DATA_TIMEOUT
 from pathlib import Path
 import time
 
@@ -16,6 +15,8 @@ Duties = dict[PumpNames,int]
 
 PID_PAUSE_MARGIN = 1.5
 """Factor of the SERIAL_WRITE_PAUSE that will be awaited to send new duties"""
+PID_DATA_TIMEOUT = 1.0
+""""Seconds that the PID controller will wait for new data before checking loop conditions. Essentially only determines how long it will take to kill the PID process once level process is killed"""
 
 class PIDRunner(Generator[Duties],Loggable):
 
