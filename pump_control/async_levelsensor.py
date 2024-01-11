@@ -1,8 +1,9 @@
+import math
 from support_classes import Generator, SharedState, GeneratorException, Loggable, Settings, DEFAULT_SETTINGS, Capture, CaptureException
 from .PUMP_CONSTS import LEVEL_SENSE_PERIOD, BUFFER_WINDOW_LENGTH, LEVEL_AVERAGE_PERIOD, CV2_KERNEL_SIZE, LEVEL_STABILISATION_PERIOD
 from .Buffer import Buffer
 from .timeavg import TimeAvg
-from typing import Any
+from typing import Any, Callable
 import cv2
 import datetime
 import asyncio
@@ -171,13 +172,13 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
         # write information text
         cv2.putText(frame, f'Electrolyte Loss: {0-avg_change} mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Anolyte: {avg_an} mL', (10,70), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Catholyte: {avg_cath}cmL', (10,90), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Diff: {avg_diff} mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 0, 255), 2, cv2.LINE_AA)
+                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Anolyte: {avg_an} mL', (10,80), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Catholyte: {avg_cath}cmL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
+        cv2.putText(frame, f'Diff: {avg_diff} mL', (10,140), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
 
         # concatenate original and filtered images
         displayimg = np.concatenate((frame,original_frame),axis=1)
@@ -218,24 +219,183 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         cv2.destroyAllWindows()
 
 def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
-    frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-    frm_width = np.shape(frame)[1]
-    # assert CV2_KERNEL_SIZE % 2 == 1
-    # kernel = np.ones((CV2_KERNEL_SIZE,CV2_KERNEL_SIZE))
-    # central_index = int((CV2_KERNEL_SIZE-1)/2)
-    # kernel[central_index,0:CV2_KERNEL_SIZE] = np.ones(CV2_KERNEL_SIZE)
-    # kernel[0:CV2_KERNEL_SIZE,central_index] = np.ones(CV2_KERNEL_SIZE)
+    # frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    # frm_height, frm_width = np.shape(frame)
+    # # assert CV2_KERNEL_SIZE % 2 == 1
+    # # kernel = np.ones((CV2_KERNEL_SIZE,CV2_KERNEL_SIZE))
+    # # central_index = int((CV2_KERNEL_SIZE-1)/2)
+    # # kernel[central_index,0:CV2_KERNEL_SIZE] = np.ones(CV2_KERNEL_SIZE)
+    # # kernel[0:CV2_KERNEL_SIZE,central_index] = np.ones(CV2_KERNEL_SIZE)
 
-    kernel = np.ones((3,int(frm_width/2)))
-    _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
-    frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
-    num_nonzero = np.zeros(frm_width)
-    for i,pixel_column in enumerate(frame.T):
-        num_nonzero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
-    median_height = float(np.median(num_nonzero))
+    # thresh_window_size = max(np.floor(frm_height/3),frm_width)
+    # # round to odd number
+    # thresh_window_size += thresh_window_size % 2 -1
+
+
+    # kernel = np.ones((3,int(3*frm_width/4)))
+    # _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    # # frame = cv2.adaptiveThreshold(frame,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,thresh_window_size,-10)
+    # frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
+    # frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
+    # num_nonzero = np.zeros(frm_width)
+    # for i,pixel_column in enumerate(frame.T):
+    #     num_nonzero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
+    # median_height = float(np.median(num_nonzero))
+    # frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+
+    frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    frm_height, frm_width = np.shape(frame)
+
+    # Generate list of average brithnesses of each row in image
+    pow_fun = PowerFunction(1/3)
+    avg_brightness = meanrows(frame,pow_fun.solve)
+    
+    
+    kernel_size = int(math.floor(frm_height/4))
+    kernel_size += kernel_size % 2 -1
+
+    # Perform adaptive thresholding on average list using mean-C technique
+    thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-2)
+
+    # Perform a morph close to remove erroneous regions:
+    # First perform a morph erode
+    thresh_rows = morph_erode_1d(thresh_rows,kernel_size)
+    # Next a morph dilate
+    thresh_rows = morph_dilate_1d(thresh_rows,kernel_size)
+
+    # Select only the lowest region of dark in case more than 1 region remains
+    thresh_rows = select_final(thresh_rows)
+
+    # Convert the 1D list into the original frame shape again (extrapolate rows)
+    for rownumber in range(0,frm_height):
+        frame[rownumber,:] = thresh_rows[rownumber]
+    # Convert back to RGB format
     frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
-    return frame,scale*median_height
+
+    # Get number of dark pixels to calculate height with
+    npixels = 0
+    for i in range(0,len(thresh_rows)):
+        if thresh_rows[i] == 0: 
+            npixels+=1
+
+    return frame,scale*npixels
+
+def adaptive_y_threshold(avg_list: list[int], window_size: int = 11, C: int = 0):
+    if window_size % 2 == 0:
+        raise ValueError("Even kernel size supplied to adaptive threshold")
+    imid = math.floor(window_size/2)
+    size_in = len(avg_list)
+    thresh_out = [0]*size_in
+    for i in range(0,size_in):
+        vals_in_window = [0] * window_size
+        minimum_index = i-imid
+        maximum_index = i+imid
+
+
+        minimum_window_index = 0
+        if minimum_index < 0:
+            minimum_window_index = -minimum_index
+            vals_in_window[0:minimum_window_index] = [avg_list[0]]*minimum_window_index
+
+
+        maximum_window_index = window_size -1
+        if maximum_index > size_in -1:
+            maximum_window_index = maximum_index - (size_in-1)
+            vals_in_window[maximum_window_index:-1] = [avg_list[-1]]*(window_size-1-maximum_window_index)
+
+        for jnormal in range (minimum_window_index,maximum_window_index):
+            mainindex = i - imid + jnormal -1
+            try:
+                vals_in_window[jnormal] = avg_list[mainindex]
+            except:
+                print(mainindex)
+                pass
+        window_thresh = np.mean(vals_in_window) - C
+        thresh_out[i] = 0 if avg_list[i] < window_thresh else 255
+    return thresh_out
+
+def select_final(thresh_in: list[int]):
+    size_in = len(thresh_in)
+    left = 0
+    right = 0
+    for i in range(0,size_in):
+        if thresh_in[i] == 0:
+            right = i
+        else:
+            left = i
+    if right>left:
+        left +=1
+        thresh_in[0:left] = [255]*left
+        thresh_in[left:right+1] = [0]*(right+1-left)
+    return thresh_in
+
+def morph_erode_1d(img: list[int], window_size: int = 11):
+    if window_size % 2 == 0:
+        raise ValueError("Even kernel size supplied to morph close")
+    size_in = len(img)
+    imid = math.floor(window_size/2)
+    padded_data = [255]*imid + img + [0]*imid
+    thresh_out = [0]*size_in
+
+    for i in range(0,size_in):
+        window = padded_data[i:i+window_size]
+        set_to_full = False
+        for j in range(0,window_size):
+            if window[j] > 0:
+                set_to_full = True
+        thresh_out[i] = 255 if set_to_full else img[i]
+    return thresh_out
+
+def morph_dilate_1d(img: list[int], window_size: int = 11):
+    if window_size % 2 == 0:
+        raise ValueError("Even kernel size supplied to morph close")
+    size_in = len(img)
+    imid = math.floor(window_size/2)
+    padded_data = [255]*imid + img + [0]*imid
+    thresh_out = [0]*size_in
+    for i in range(0,size_in):
+        window = padded_data[i:i+window_size]
+        set_to_zero = False
+        for j in range(0,window_size):
+            if window[j] == 0:
+                set_to_zero = True
+        thresh_out[i] = 0 if set_to_zero else img[i]
+    return thresh_out
+
+def meanrows(frame_in: np.ndarray,weightfun: Callable[[int],float]) -> list[int]:
+    # Generate weights
+    weights = np.zeros(frame_in.shape)
+    for rownum in range(0,frame_in.shape[0]):
+        for colnum in range(0,frame_in.shape[1]):
+            weights[rownum,colnum] = weightfun(frame_in[rownum,colnum])
+   
+   # Apply weighted mean to each row
+    frm_rows,frm_cols = frame_in.shape
+    vals_out = [0]*frm_rows
+    for rownum in range(0,frm_rows):
+        
+        numerator = np.sum(np.multiply(weights[rownum,:],frame_in[rownum,:]))
+        denominator = np.sum(weights[rownum,:])
+        vals_out[rownum] = numerator/denominator
+    return vals_out
+
+
+class Function:
+    def __init__(self,*parameters,**optional_parameters):
+        pass
+
+    def solve(self,x: int) -> float:
+        pass
+
+class PowerFunction(Function):
+    def __init__(self,power: float,*args,maxval: int = 255,**kwargs):
+        super().__init__(*args,**kwargs)
+        self.power = power
+        self.maxval = maxval
+
+    def solve(self,x: int) -> float:
+        return (x/self.maxval)**self.power
+
 
 def _draw_level(frame: np.array,height_from_base: float):
     sz = np.shape(frame)
