@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Any, Iterable
 
-from support_classes.settings_interface import Settings
+from support_classes.settings_interface import CAMERA_SETTINGS, Settings
 from .UIController import UIController
 from ui_root import UIRoot
 from pump_control import Pump, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
@@ -89,5 +89,13 @@ class ControllerPageController(UIController):
 
     # SETTINGS MODIFICATION LOGIC
     def __handle_settings_changed(self, modifications: dict[Settings, Any]):
+        def _contains_any(lst1: Iterable, lst2: Iterable):
+            for item in lst1:
+                if item in lst2:
+                    return True
+            return False
+        if _contains_any(modifications,CAMERA_SETTINGS):
+            # if camera settings are modified, image scaling/size/position may have changed, so need to reselect data
+            ProcessName.LEVEL.value.level_data = None
         self.pump.change_settings(modifications)
         
