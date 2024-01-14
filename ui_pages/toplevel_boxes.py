@@ -295,6 +295,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                         pid_settings[Settings.REFILL_TIME],
                                         self.control_group,
                                         map_fun=float,
+                                        units="s",
                                         entry_validator = _validate_time_float,
                                         on_return = self.__confirm_selections
                                         )
@@ -315,6 +316,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                         pid_settings[Settings.REFILL_PERCENTAGE_TRIGGER],
                                         self.control_group,
                                         map_fun=int,
+                                        units="%",
                                         entry_validator = _validate_percent,
                                         on_return = self.__confirm_selections
                                         )
@@ -325,6 +327,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                         pid_settings[Settings.PID_REFILL_COOLDOWN],
                                         self.control_group,
                                         map_fun=float,
+                                        units = "s",
                                         entry_validator = _validate_time_float,
                                         on_return = self.__confirm_selections
                                         )
