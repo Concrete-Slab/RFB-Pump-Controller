@@ -127,7 +127,7 @@ def main():
     camera = 1
     capture_instance = PygameCapture(camera,backend=backend,scale_factor=1.5)
     capture_instance.open()
-    power_function = PowerFunction(1/3)
+    power_function = PowerFunction(1/2.5)
     inp = 0
     with open_cv2_window("Window") as wind:
         while inp != ord('a'):
@@ -137,19 +137,26 @@ def main():
             roi = cv2.selectROI(wind,img)
             roi_slice = _get_indices(roi)
             frame_1 = img[roi_slice[0],roi_slice[1],:]
-            frame: np.ndarray = cv2.cvtColor(frame_1,cv2.COLOR_BGR2GRAY)
+            frame = copy.copy(frame_1[:,:,2])
             frm_height, frm_width = np.shape(frame)
+            # frame: np.ndarray = cv2.cvtColor(frame_1,cv2.COLOR_BGR2GRAY)
 
             avg_brightness = meanrows(frame,power_function.solve)
+
+            for rownumber in range(0,frm_height):
+                frame[rownumber,:] = avg_brightness[rownumber]
+            frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+            img[roi_slice[0],roi_slice[1]] = frame
+            cv2.imshow(wind,img)
+            cv2.waitKey()
 
             kernel_size = int(math.floor(frm_height/4))
             kernel_size += kernel_size % 2 -1
 
-            thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-2)
+            thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-3)
 
             for rownumber in range(0,frm_height):
                 frame[rownumber,:] = thresh_rows[rownumber]
-            frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
             img[roi_slice[0],roi_slice[1]] = frame
             cv2.imshow(wind,img)
             cv2.waitKey()

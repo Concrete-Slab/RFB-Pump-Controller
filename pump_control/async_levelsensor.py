@@ -241,11 +241,17 @@ def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
     # median_height = float(np.median(num_nonzero))
     # frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
 
-    frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    # frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    # Take only the red component - splashes and meniscus are thinner so appear redder than bulk
+    # This will blend these features with the background after processing as intended
+    # More reliable than simply converting to grayscale
+    frame = frame[:,:,2]
+
+
     frm_height, frm_width = np.shape(frame)
 
     # Generate list of average brithnesses of each row in image
-    pow_fun = PowerFunction(1/3)
+    pow_fun = PowerFunction(1/2.5)
     avg_brightness = meanrows(frame,pow_fun.solve)
     
     
@@ -253,7 +259,7 @@ def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
     kernel_size += kernel_size % 2 -1
 
     # Perform adaptive thresholding on average list using mean-C technique
-    thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-2)
+    thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-3)
 
     # Perform a morph close to remove erroneous regions:
     # First perform a morph erode
