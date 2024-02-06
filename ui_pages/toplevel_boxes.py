@@ -331,6 +331,35 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                         entry_validator = _validate_time_float,
                                         on_return = self.__confirm_selections
                                         )
+        kp_var = _make_and_group(_make_entry,
+                                 control_frame,
+                                 "Proportional Gain",
+                                 Settings.PROPORTIONAL_GAIN,
+                                 pid_settings[Settings.PROPORTIONAL_GAIN],
+                                 self.control_group,
+                                 map_fun=float,
+                                 entry_validator = _validate_gain,
+                                 on_return = self.__confirm_selections)
+        
+        ki_var = _make_and_group(_make_entry,
+                                 control_frame,
+                                 "Integral Gain",
+                                 Settings.INTEGRAL_GAIN,
+                                 pid_settings[Settings.INTEGRAL_GAIN],
+                                 self.control_group,
+                                 map_fun=float,
+                                 entry_validator = _validate_gain,
+                                 on_return = self.__confirm_selections)
+        
+        kd_var = _make_and_group(_make_entry,
+                                 control_frame,
+                                 "Derivative Gain",
+                                 Settings.DERIVATIVE_GAIN,
+                                 pid_settings[Settings.DERIVATIVE_GAIN],
+                                 self.control_group,
+                                 map_fun=float,
+                                 entry_validator = _validate_gain,
+                                 on_return = self.__confirm_selections)
         
         self.control_group.show()
         
@@ -1117,3 +1146,14 @@ def _validate_scale_factor(sf: str, allow_empty = True):
         return False
     except:
         return False
+@validator_function
+def _validate_gain(str_in: str, allow_empty = True) -> bool:
+    if str_in in ("","-"):
+        return True
+    try:
+        float(str_in)
+        return True
+    except:
+        return False
+    
+    

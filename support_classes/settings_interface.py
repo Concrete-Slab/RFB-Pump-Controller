@@ -69,6 +69,12 @@ class Settings(Enum):
     """Most recently used serial port"""
     RECENT_SERIAL_INTERFACE = "recent_serial_interface"
     """Most recently used serial interface"""
+    PROPORTIONAL_GAIN = "proportional_gain"
+    """PID controller proportional gain term"""
+    INTEGRAL_GAIN = "integral_gain"
+    """PID controller integral gain term"""
+    DERIVATIVE_GAIN = "derivative_gain"
+    """PID controller derivative gain"""
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -97,10 +103,13 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.PID_REFILL_COOLDOWN: 18*60.0,
     Settings.IMAGE_RESCALE_FACTOR: 1.0,
     Settings.RECENT_SERIAL_PORT: None,
-    Settings.RECENT_SERIAL_INTERFACE: None
+    Settings.RECENT_SERIAL_INTERFACE: None,
+    Settings.PROPORTIONAL_GAIN: 100,
+    Settings.INTEGRAL_GAIN: 0.005,
+    Settings.DERIVATIVE_GAIN: 0,
 }
 
-PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN])
+PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
 LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
 LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
