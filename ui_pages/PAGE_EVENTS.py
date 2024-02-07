@@ -46,6 +46,8 @@ class CEvents(Enum):
     """User wishes to close the settings window for a process. Callbacks to take ProcessName as argument"""
     SETTINGS_MODIFIED = Literal["settings_confirmed"]
     """User has confirmed settings. Callbacks to take a dictionary containing the modified settings"""
+    STOP_ALL = Literal["stop_all"]
+    """Stop all pumps"""
     
     
 

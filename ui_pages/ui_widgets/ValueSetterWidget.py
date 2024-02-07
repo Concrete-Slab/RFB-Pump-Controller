@@ -28,10 +28,10 @@ class ValueSetterWidget(ctk.CTkFrame):
                                    corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,
                                    font=internal_font,
                                    )
-        self._entry.bind('<Return>', command=lambda event: self._update_value())
+        self._entry.bind('<Return>', command=lambda event: self.update_value())
         self._entry.bind('<FocusOut>', command=lambda event: self.focus_set(), add="+")
         self._button = ctk.CTkButton(self,
-                                     command=self._update_value,
+                                     command=self.update_value,
                                      text='Apply',
                                      font=internal_font,
                                      text_color=ApplicationTheme.BLACK,
@@ -42,7 +42,7 @@ class ValueSetterWidget(ctk.CTkFrame):
         self.columnconfigure([0,1],weight=1)
         self.rowconfigure([0],weight=1)
 
-    def _update_value(self):
+    def update_value(self):
         val = self._entry.get()
         self._entry.delete(0, ctk.END)
         self.focus_set()

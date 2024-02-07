@@ -12,7 +12,7 @@ class ControllerPage(ctk.CTkFrame):
 
     def __init__(self, parent, controller: UIController, width: int = 200, height: int = 200, corner_radius: int | str | None = None, border_width: int | str | None = None, bg_color: str | tuple[str, str] = "transparent", fg_color: str | tuple[str, str] | None = None, border_color: str | tuple[str, str] | None = None, background_corner_colors: tuple[str | tuple[str, str]] | None = None, overwrite_preferred_drawing_method: str | None = None, **kwargs):
         super().__init__(parent, width, height, corner_radius, border_width, bg_color, fg_color, border_color, background_corner_colors, overwrite_preferred_drawing_method, **kwargs)
-        
+
         self.UIcontroller = controller
 
         self.auto_pumps: dict[Settings,PumpNames] = read_settings(Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP)
@@ -36,7 +36,30 @@ class ControllerPage(ctk.CTkFrame):
                                                           size=ApplicationTheme.STATUS_FONT_SIZE
                                                           ),
                                         )
-        self.status_label.grid(row=1,column=0,columnspan=nColumns,padx=10,pady=5)
+        self.stop_button = ctk.CTkButton(self,
+                                         text="Stop All",
+                                         font=ctk.CTkFont(family=ApplicationTheme.FONT,
+                                                          size=ApplicationTheme.INPUT_FONT_SIZE),
+                                         text_color=ApplicationTheme.BLACK,
+                                         fg_color=ApplicationTheme.ERROR_COLOR,
+                                         hover_color=ApplicationTheme.GRAY,
+                                         corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,
+                                         command=lambda: self.UIcontroller.notify_event(CEvents.STOP_ALL),
+                                        )
+        
+        self.apply_button = ctk.CTkButton(self,
+                                          text="Apply All",
+                                          font=ctk.CTkFont(family=ApplicationTheme.FONT,
+                                                           size=ApplicationTheme.INPUT_FONT_SIZE),
+                                          text_color=ApplicationTheme.BLACK,
+                                          fg_color=ApplicationTheme.GREEN,
+                                          hover_color=ApplicationTheme.GRAY,
+                                          corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,
+                                          command=self.__apply_all
+                                        )
+        self.stop_button.grid(row=1,column=0,padx=10,pady=5,sticky="ns")
+        self.status_label.grid(row=1,column=1,padx=10,pady=5,sticky="ns")
+        self.apply_button.grid(row=1,column=2,padx=10,pady=5,sticky="ns")
 
         self.process_states: dict[ProcessName,ctk.IntVar] = {}
         self.process_boxes: dict[ProcessName,BoolSwitch] = {}
@@ -134,6 +157,10 @@ class ControllerPage(ctk.CTkFrame):
         if pumps_changed:
             self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
             self.auto_pumps = new_auto_pumps
+
+    def __apply_all(self):
+        for pmp,widget in self.pump_map.items():
+            duty = widget.apply()
             
 
     def destroy(self):
