@@ -91,6 +91,7 @@ def select_final(thresh_in: list[int]):
 
 def meanrows(frame_in: np.ndarray,weightfun: Callable[[int],float]) -> list[int]:
     # Generate weights
+    frame_in = frame_in/255
     weights = np.zeros(frame_in.shape)
     for rownum in range(0,frame_in.shape[0]):
         for colnum in range(0,frame_in.shape[1]):
@@ -103,7 +104,7 @@ def meanrows(frame_in: np.ndarray,weightfun: Callable[[int],float]) -> list[int]
         
         numerator = np.sum(np.multiply(weights[rownum,:],frame_in[rownum,:]))
         denominator = np.sum(weights[rownum,:])
-        vals_out[rownum] = numerator/denominator
+        vals_out[rownum] = numerator/denominator * 255
     return vals_out
 
 class Function:
@@ -127,7 +128,7 @@ def main():
     camera = 1
     capture_instance = PygameCapture(camera,backend=backend,scale_factor=1.5)
     capture_instance.open()
-    power_function = PowerFunction(1/2.5)
+    power_function = PowerFunction(0)
     inp = 0
     with open_cv2_window("Window") as wind:
         while inp != ord('a'):
@@ -137,7 +138,7 @@ def main():
             roi = cv2.selectROI(wind,img)
             roi_slice = _get_indices(roi)
             frame_1 = img[roi_slice[0],roi_slice[1],:]
-            frame = copy.copy(frame_1[:,:,2])
+            frame = copy.copy(frame_1[:,:,1])
             frm_height, frm_width = np.shape(frame)
             # frame: np.ndarray = cv2.cvtColor(frame_1,cv2.COLOR_BGR2GRAY)
 
@@ -175,6 +176,26 @@ def main():
             for rownumber in range(0,frm_height):
                 frame[rownumber,:] = thresh_rows[rownumber]
             frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+
+            kernel_size = int(math.floor(frm_height/8))
+            kernel_size += kernel_size % 2 -1
+
+            thresh_rows = morph_erode_1d(thresh_rows,kernel_size)
+            frame: np.ndarray = cv2.cvtColor(frame_1,cv2.COLOR_BGR2GRAY)
+            for rownumber in range(0,frm_height):
+                frame[rownumber,:] = thresh_rows[rownumber]
+            frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+            img[roi_slice[0],roi_slice[1]] = frame
+            cv2.imshow(wind,img)
+            cv2.waitKey()
+
+            thresh_rows = morph_dilate_1d(thresh_rows,kernel_size)
+            frame: np.ndarray = cv2.cvtColor(frame_1,cv2.COLOR_BGR2GRAY)
+            for rownumber in range(0,frm_height):
+                frame[rownumber,:] = thresh_rows[rownumber]
+            frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+
+
 
             img[roi_slice[0],roi_slice[1]] = frame
             cv2.imshow(wind,img)

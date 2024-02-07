@@ -1,5 +1,7 @@
 /.idea/
 *.bmp
+*.png
+*.jpg
 **/__pycache__/
 /Legacy/
 **/node_modules/
