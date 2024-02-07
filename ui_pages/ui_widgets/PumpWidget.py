@@ -37,6 +37,9 @@ class PumpWidget(ctk.CTkFrame):
     def set_bgcolor(self,new_color: str):
         self.configure(fg_color=new_color,require_redraw=True)
 
+    def apply(self):
+        self._dutySetter.update_value()
+
     def destroy(self):
         # TODO end the serial connection
         super().destroy()

@@ -175,7 +175,7 @@ class Pump(AsyncRunner,Teardown):
         modified_keys = set(modifications.keys())
 
         #----------------- PID settings --------------------
-        if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY]):
+        if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN]):
             self.stop_pid()
         if _contains_any(modified_keys,[Settings.AVERAGE_WINDOW_WIDTH,Settings.PID_REFILL_COOLDOWN]):
             cd_possibilities = read_settings(Settings.PID_REFILL_COOLDOWN,Settings.AVERAGE_WINDOW_WIDTH)
@@ -253,7 +253,7 @@ class Pump(AsyncRunner,Teardown):
         # now stop these pumps with order determined by pid system importance
         await self.__stop_with_hierarchy(high_priority)
         await self.__stop_with_hierarchy(low_priority)
-        self.state.set_value(ActiveState({pmpname:0 for pmpname in pumps}))
+        # self.state.set_value(ActiveState({pmpname:0 for pmpname in pumps}))
 
     async def __stop_with_hierarchy(self,pumps: list[PumpNames]):
         HIERARCHY = [Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP]
@@ -288,6 +288,8 @@ class Pump(AsyncRunner,Teardown):
     async def __close_without_error(self,pmp: PumpNames):
                     try:
                         await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
+                        new_state = ActiveState({pmp:0})
+                        self.state.set_value(new_state)
                     except InterfaceException:
                         pass
 

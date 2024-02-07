@@ -45,6 +45,8 @@ class ControllerPageController(UIController):
 
         self.add_listener(CEvents.OPEN_ROI_SELECTION,ProcessName.LEVEL.value.request_ROIs)
 
+        self.add_listener(CEvents.STOP_ALL,lambda: self.pump.run_async(self.pump.emergency_stop([pmp for pmp in PumpNames])))
+
         # General state poll bindings
         pump_state_remover = self._add_state(pump.state,self.__handle_pump_state)
         self.__other_removal_callbacks.append(pump_state_remover)
