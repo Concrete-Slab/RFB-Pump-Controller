@@ -217,8 +217,8 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         cv2.destroyAllWindows()
 
 def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
-    # frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-    # frm_height, frm_width = np.shape(frame)
+    frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    frm_height, frm_width = np.shape(frame)
     # # assert CV2_KERNEL_SIZE % 2 == 1
     # # kernel = np.ones((CV2_KERNEL_SIZE,CV2_KERNEL_SIZE))
     # # central_index = int((CV2_KERNEL_SIZE-1)/2)
@@ -230,57 +230,59 @@ def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
     # thresh_window_size += thresh_window_size % 2 -1
 
 
-    # kernel = np.ones((3,int(3*frm_width/4)))
-    # _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    # # frame = cv2.adaptiveThreshold(frame,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,thresh_window_size,-10)
-    # frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
-    # frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
-    # num_nonzero = np.zeros(frm_width)
-    # for i,pixel_column in enumerate(frame.T):
-    #     num_nonzero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
-    # median_height = float(np.median(num_nonzero))
-    # frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
-
-    # frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-    # Take only the red component - splashes and meniscus are thinner so appear redder than bulk
-    # This will blend these features with the background after processing as intended
-    # More reliable than simply converting to grayscale
-    frame = frame[:,:,2]
-
-
-    frm_height, frm_width = np.shape(frame)
-
-    # Generate list of average brithnesses of each row in image
-    pow_fun = PowerFunction(1/2.5)
-    avg_brightness = meanrows(frame,pow_fun.solve)
-    
-    
-    kernel_size = int(math.floor(frm_height/4))
-    kernel_size += kernel_size % 2 -1
-
-    # Perform adaptive thresholding on average list using mean-C technique
-    thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-3)
-
-    # Perform a morph close to remove erroneous regions:
-    # First perform a morph erode
-    thresh_rows = morph_erode_1d(thresh_rows,kernel_size)
-    # Next a morph dilate
-    thresh_rows = morph_dilate_1d(thresh_rows,kernel_size)
-
-    # Select only the lowest region of dark in case more than 1 region remains
-    thresh_rows = select_final(thresh_rows)
-
-    # Convert the 1D list into the original frame shape again (extrapolate rows)
-    for rownumber in range(0,frm_height):
-        frame[rownumber,:] = thresh_rows[rownumber]
-    # Convert back to RGB format
+    kernel = np.ones((31,int(3*frm_width/4)))
+    _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    # frame = cv2.adaptiveThreshold(frame,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,thresh_window_size,-10)
+    frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
+    frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
+    num_zero = np.zeros(frm_width)
+    for i,pixel_column in enumerate(frame.T):
+        num_zero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
+    npixels = float(np.median(num_zero))
     frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
 
-    # Get number of dark pixels to calculate height with
-    npixels = 0
-    for i in range(0,len(thresh_rows)):
-        if thresh_rows[i] == 0: 
-            npixels+=1
+    ##################################################################
+
+    # # frame: np.ndarray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
+    # # Take only the red component - splashes and meniscus are thinner so appear redder than bulk
+    # # This will blend these features with the background after processing as intended
+    # # More reliable than simply converting to grayscale
+    # frame = frame[:,:,2]
+
+
+    # frm_height, frm_width = np.shape(frame)
+
+    # # Generate list of average brithnesses of each row in image
+    # pow_fun = PowerFunction(1/2.5)
+    # avg_brightness = meanrows(frame,pow_fun.solve)
+    
+    
+    # kernel_size = int(math.floor(frm_height/4))
+    # kernel_size += kernel_size % 2 -1
+
+    # # Perform adaptive thresholding on average list using mean-C technique
+    # thresh_rows = adaptive_y_threshold(avg_brightness,window_size=kernel_size,C=-3)
+
+    # # Perform a morph close to remove erroneous regions:
+    # # First perform a morph erode
+    # thresh_rows = morph_erode_1d(thresh_rows,kernel_size)
+    # # Next a morph dilate
+    # thresh_rows = morph_dilate_1d(thresh_rows,kernel_size)
+
+    # # Select only the lowest region of dark in case more than 1 region remains
+    # thresh_rows = select_final(thresh_rows)
+
+    # # Convert the 1D list into the original frame shape again (extrapolate rows)
+    # for rownumber in range(0,frm_height):
+    #     frame[rownumber,:] = thresh_rows[rownumber]
+    # # Convert back to RGB format
+    # frame = cv2.cvtColor(frame,cv2.COLOR_GRAY2BGR)
+
+    # # Get number of dark pixels to calculate height with
+    # npixels = 0
+    # for i in range(0,len(thresh_rows)):
+    #     if thresh_rows[i] == 0: 
+    #         npixels+=1
 
     return frame,scale*npixels
 
