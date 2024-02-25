@@ -75,6 +75,12 @@ class Settings(Enum):
     """PID controller integral gain term"""
     DERIVATIVE_GAIN = "derivative_gain"
     """PID controller derivative gain"""
+    IMAGE_SAVE_PERIOD = "image_save_period"
+    """Period between saving images taken by level sensor"""
+    IMAGE_DIRECTORY = "image_directory"
+    """Full path to directory where images are saved"""
+    LOG_IMAGES = "log_images"
+    """True if images from level sensor are to be saved"""
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -107,13 +113,16 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.PROPORTIONAL_GAIN: 100,
     Settings.INTEGRAL_GAIN: 0.005,
     Settings.DERIVATIVE_GAIN: 0,
+    Settings.IMAGE_SAVE_PERIOD: 60,
+    Settings.IMAGE_DIRECTORY: (__thispath/"pumps/images").as_posix(),
+    Settings.LOG_IMAGES: False,
 }
 
-PID_SETTINGS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
-LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
+LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY,Settings.IMAGE_DIRECTORY])
+LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LOG_IMAGES,*LOG_DIRECTORIES])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
-LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY])
-CAMERA_SETTINGS = set([Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
+PID_SETTINGS = set([*PID_PUMPS,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
+CAMERA_SETTINGS = set([Settings.IMAGE_SAVE_PERIOD,Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
 CV_SETTINGS = set([Settings.LEVEL_STABILISATION_PERIOD,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH])
 LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS])
 

@@ -132,6 +132,9 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
         self.__speed_var = ctk.StringVar(value = cast_b2s(prev_log_speeds))
         speed_switch = ctk.CTkSwitch(switch_frame,onvalue="on",offvalue="off",variable=self.__speed_var,text="Pump Speed Logging",width=50)
         speed_switch.grid(row=2,column=1,padx=10,pady=5,sticky="nsew")
+        self.__image_var = ctk.StringVar(value = cast_b2s(prev_log_speeds))
+        image_switch = ctk.CTkSwitch(switch_frame,onvalue="on",offvalue="off",variable=self.__image_var,text="Image Logging",width=50)
+        image_switch.grid(row=3,column=1,padx=10,pady=5,sticky="nsew")
 
         directory_label = ctk.CTkLabel(directory_frame, text = "Data Storage Directory:")
         directory_label.grid(row=0,column=0,columnspan = 2,padx=10,pady=5,sticky="sew")
@@ -175,9 +178,11 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
             Settings.LOG_LEVELS: cast_s2b(self.__level_var.get()),
             Settings.LOG_PID: cast_s2b(self.__pid_var.get()),
             Settings.LOG_SPEEDS: cast_s2b(self.__speed_var.get()),
+            Settings.LOG_IMAGES: cast_s2b(self.__image_var.get()),
             Settings.LEVEL_DIRECTORY: (new_logging_directory / "levels"),
             Settings.PID_DIRECTORY: (new_logging_directory / "duties"),
             Settings.SPEED_DIRECTORY: (new_logging_directory / "speeds"),
+            Settings.IMAGE_DIRECTORY: (new_logging_directory / "images"),
         }
 
     
@@ -644,13 +649,15 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         prev_stabilisation_period = all_settings[Settings.LEVEL_STABILISATION_PERIOD]
         prev_backend: CaptureBackend = all_settings[Settings.CAMERA_BACKEND]
         prev_rescale_factor: float = all_settings[Settings.IMAGE_RESCALE_FACTOR]
+        prev_period: float = all_settings[Settings.IMAGE_SAVE_PERIOD]
 
         segment_frames = self.generate_layout("Camera Settings","Computer Vision Settings",confirm_command=self.__confirm_selections)
         camera_frame = segment_frames[0]
         cv_frame = segment_frames[1]
         
         self.rescale_var = _make_and_grid(_make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,1,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
-        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,2,values=Capture.SUPPORTED_INTERFACES)
+        self.percent_var = _make_and_grid(_make_entry, camera_frame, "Period Between Image Saves", Settings.IMAGE_SAVE_PERIOD, prev_period, 2, map_fun=float, entry_validator = _validate_percent, on_return = self.__confirm_selections, units="s")
+        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,3,values=Capture.SUPPORTED_INTERFACES)
         self.interface_var.trace_add(self.__interface_changed)
 
         self.sense_period_var = _make_and_grid(_make_entry,cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),1,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
@@ -966,10 +973,11 @@ def _make_entry(frame: ctk.CTkFrame,
     entry.bind("<Return>",lambda *args: on_return() if on_return else None)
     var.widget = entry
     frame.columnconfigure([0],weight=1)
+    frame.columnconfigure([1],weight=0)
     if units:
         entry.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
         unit_label = ctk.CTkLabel(entryparent,text=units)
-        unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nsw")
+        unit_label.grid(row=0,column=1,padx=10,pady=0,sticky="nse")
     else:
         entry.grid(row=0,column=0,columnspan=2,padx=0,pady=0,sticky="nsew")
     return lbl,var,entryparent

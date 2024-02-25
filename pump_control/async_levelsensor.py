@@ -1,4 +1,6 @@
 import math
+import random
+from PIL import Image
 from support_classes import Generator, SharedState, GeneratorException, Loggable, Settings, DEFAULT_SETTINGS, Capture, CaptureException
 from .timeavg import TimeAvg
 from typing import Any, Callable
@@ -30,6 +32,9 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
                  sense_period: float = DEFAULT_SETTINGS[Settings.SENSING_PERIOD],
                  average_window_length: float = DEFAULT_SETTINGS[Settings.AVERAGE_WINDOW_WIDTH],
                  stabilisation_period: float = DEFAULT_SETTINGS[Settings.LEVEL_STABILISATION_PERIOD],
+                 save_period: float = DEFAULT_SETTINGS[Settings.IMAGE_SAVE_PERIOD],
+                 save_images: bool = DEFAULT_SETTINGS[Settings.LOG_IMAGES],
+                 image_directory: Path = DEFAULT_SETTINGS[Settings.IMAGE_DIRECTORY],
                  **kwargs) -> None:
         
         super().__init__(directory = absolute_logging_path,default_headers = LevelSensor.LOG_COLUMN_HEADERS)
@@ -49,6 +54,12 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
         self.__stabilisation_period = stabilisation_period
         self.__average_window_length = average_window_length
         self.__sense_period = sense_period
+
+        # Image saving parameters
+        self.__capture_save_period = save_period
+        self.__last_capture = 0
+        self.__save_images = save_images
+        self.__image_directory = image_directory
 
         self.__indexAn: tuple[slice|slice]|None = None
         self.__indexCath: tuple[slice|slice]|None = None
@@ -88,6 +99,12 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
             self.__readings_buffer = TimeAvg.from_old(old_buffer,self.__average_window_length)
         if Settings.LEVEL_STABILISATION_PERIOD in new_parameters.keys():
             self.__stabilisation_period = new_parameters[Settings.LEVEL_STABILISATION_PERIOD]
+        if Settings.IMAGE_SAVE_PERIOD in new_parameters.keys():
+            self.__capture_save_period = new_parameters[Settings.IMAGE_SAVE_PERIOD]
+        if Settings.IMAGE_DIRECTORY in new_parameters.keys():
+            self.__image_directory = new_parameters[Settings.IMAGE_DIRECTORY]
+        if Settings.LOG_IMAGES in new_parameters.keys():
+            self.__save_images = new_parameters[Settings.LOG_IMAGES]
 
     def set_vision_parameters(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float):
         if any((rect1 is None, rect2 is None, rect_ref is None, vol_ref is None)):
@@ -207,6 +224,15 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
             timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
             logging_data = [timestamp,*list(map(str,data))]
             self.log(logging_data)
+        # chance to save image
+        if self.__save_images and (t-self.__last_capture)>self.__capture_save_period:
+            # save image
+            self.__last_capture = t
+            imgsave = np.array(original_frame, dtype=np.uint8)
+            imgpath = self.__image_directory / f"img_{t}.png"
+            imgsave = Image.fromarray(imgsave)
+            imgsave.save(imgpath)
+
 
     def teardown(self):
         self.__datafile = None
@@ -234,7 +260,7 @@ def _filter(frame: np.ndarray,scale: float) -> tuple[np.ndarray,float]:
     _, frame = cv2.threshold(frame,0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     # frame = cv2.adaptiveThreshold(frame,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,thresh_window_size,-10)
     frame = cv2.morphologyEx(frame,cv2.MORPH_CLOSE,kernel,borderType=cv2.BORDER_REPLICATE)
-    frame = np.array(cv2.GaussianBlur(frame,(7,7),sigmaX=5,sigmaY=0.1))
+    frame = np.array(cv2.GaussianBlur(frame,(15,15),sigmaX=5,sigmaY=0.1))
     num_zero = np.zeros(frm_width)
     for i,pixel_column in enumerate(frame.T):
         num_zero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
