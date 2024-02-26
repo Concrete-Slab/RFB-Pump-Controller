@@ -1,4 +1,5 @@
 import math
+import os
 import random
 from PIL import Image
 from support_classes import Generator, SharedState, GeneratorException, Loggable, Settings, DEFAULT_SETTINGS, Capture, CaptureException
@@ -176,6 +177,7 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
 
         #---------------DISPLAY-------------------
         original_frame = copy.copy(frame)
+        unaltered_frame = copy.copy(original_frame)
         # draw the level lines on the original and filtered images
         if not isnan(avg_an) and not isnan(avg_cath):
             _draw_level(frame_an,vol_an/self.__scale)
@@ -225,14 +227,15 @@ class LevelSensor(Generator[tuple[LevelReading,np.ndarray|None]],Loggable):
             logging_data = [timestamp,*list(map(str,data))]
             self.log(logging_data)
         # chance to save image
-        if self.__save_images and (t-self.__last_capture)>self.__capture_save_period:
+        if self.__logging_state.force_value() and self.__save_images and (t-self.__last_capture)>self.__capture_save_period:
             # save image
             self.__last_capture = t
-            imgsave = np.array(original_frame, dtype=np.uint8)
-            imgpath = self.__image_directory / f"img_{t}.png"
+            imgsave = np.array(unaltered_frame, dtype=np.uint8)
+            imgpath = self.__image_directory / f"img_{int(t)}.png"
+            if not os.path.isdir(self.__image_directory):
+                os.makedirs(self.__image_directory)
             imgsave = Image.fromarray(imgsave)
             imgsave.save(imgpath)
-
 
     def teardown(self):
         self.__datafile = None
