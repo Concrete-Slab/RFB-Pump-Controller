@@ -20,7 +20,7 @@ PID_DATA_TIMEOUT = 1.0
 
 class PIDRunner(Generator[Duties],Loggable):
 
-    LOG_COLUMN_HEADERS = ["Timestamp", "Elapsed Seconds", "Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
+    LOG_COLUMN_HEADERS = ["Timestamp", "Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
 
     def __init__(self, 
                  level_state: SharedState[tuple[LevelReading,np.ndarray|None]], 
