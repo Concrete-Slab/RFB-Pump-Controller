@@ -1,6 +1,8 @@
 from contextlib import contextmanager
+from pathlib import Path
+import random
 from numpy import ndarray
-from .settings_interface import DEFAULT_SETTINGS, Settings, read_settings,CaptureBackend,CAMERA_SETTINGS, CV2_BACKENDS
+from .settings_interface import DEFAULT_SETTINGS, Settings, read_setting, read_settings,CaptureBackend,CAMERA_SETTINGS, CV2_BACKENDS
 import cv2
 import os,sys
 # hides the "Hello from pygame" prompt in console
@@ -10,9 +12,11 @@ from pygame.surfarray import array3d
 import pygame.camera as camera
 from pygame import _camera_opencv
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Any, Callable
 import platform
 import time
+from PIL import Image
+import numpy as np
 
 def _setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
@@ -24,18 +28,24 @@ def _setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: s
     actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
     return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
 
+def _setup_file(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float):
+    default_directory = read_setting(Settings.IMAGE_DIRECTORY)
+    return FileCapture(default_directory,".png")
+
 class Capture(ABC):
 
     __INTERFACES = {
         "OpenCV": _setup_cv2,
-        "Pygame": _setup_pygame
+        "Pygame": _setup_pygame,
+        "File": _setup_file,
     }
 
     SUPPORTED_INTERFACES = list(__INTERFACES.keys())
 
     @staticmethod
-    def from_settings():
-        params = read_settings(*CAMERA_SETTINGS)
+    def from_settings(params: dict[Settings,Any]|None = None):
+        if params is None:
+            params = read_settings(*CAMERA_SETTINGS)
         interface = params[Settings.CAMERA_INTERFACE_MODULE]
         if interface in Capture.__INTERFACES.keys():
             capfun = Capture.__INTERFACES[interface]
@@ -75,6 +85,29 @@ class Capture(ABC):
     @abstractmethod
     def get_backends(cls) -> list[CaptureBackend]:
         pass
+
+class FileCapture(Capture):
+    def __init__(self, directory: Path, extension: str, auto_exposure: bool = DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time: int = DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend: CaptureBackend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], scale_factor: int = DEFAULT_SETTINGS[Settings.IMAGE_RESCALE_FACTOR], **kwargs) -> None:
+        super().__init__(0, auto_exposure, exposure_time, backend, scale_factor, **kwargs)
+        imnames = [directory/fname for fname in os.listdir(directory) if fname[-len(extension):]==extension]
+        # Choose a random index in the list
+        start_index = random.randint(0, len(imnames) - 1)
+        # Generate the cyclic permutation
+        self.image_names = imnames[start_index:] + imnames[:start_index]
+        self._i = 0
+    def open(self):
+        self._i = 0
+    def get_image(self, rescale: bool = True) -> ndarray:
+        img = np.array(Image.open(self.image_names[self._i]))
+        print(img.shape)
+        self._i +=1
+        return img
+    def close(self):
+        pass
+    def get_cameras(self):
+        return None
+    def get_backends(self):
+        return []
 
 SetupFunction = Callable[[int,bool,int,str],Capture]
 
@@ -295,15 +328,22 @@ def open_cv2_window(name: str):
         except:
             pass
 
-def capture(arg0: Capture|str,rescale = True) -> ndarray:
+def capture(arg0: Capture|str|Path,rescale = True) -> ndarray:
     if isinstance(arg0,str):
-        img = cv2.imread(arg0)
-        return img
-    if isinstance(arg0,Capture):
-        with open_video_device(arg0) as vc:
-            img = vc.get_image(rescale=rescale)
-        return img
-    raise TypeError("Capture argument must be Capture or str")
+        arg0 = Path(arg0)
+    
+    if isinstance(arg0,Path):
+        if not arg0.is_absolute():
+            arg0 = arg0.absolute()
+        arg0 = FileCapture(arg0,".png")
+
+    if not isinstance(arg0,Capture):
+        raise TypeError("capture argument must be of type Capture, Path, or str")
+
+    with open_video_device(arg0) as vc:
+        img = vc.get_image(rescale=rescale)
+    return img
+    
 
 # solutions from Dave Smith's blog: suppresses the warnings from pygame and opencv
 # https://thesmithfam.org/blog/2012/10/25/temporarily-suppress-console-output-in-python/
@@ -327,7 +367,7 @@ def suppress_stderr():
             sys.stderr = old_stderr
 
 
-# Pygame has a bug where sys is not imported. This class will override the faulty constructor:
+# Pygame has a bug where sys is not imported for whatever reason. This class will override the faulty constructor:
 class PygameCV2Camera(_camera_opencv.Camera):
 
     def __init__(self, device=0, size=(640, 480), mode="RGB", api_preference=None):

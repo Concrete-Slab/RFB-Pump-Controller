@@ -1,6 +1,6 @@
 from typing import Any, Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
-from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, CAMERA_SETTINGS, LEVEL_SETTINGS
+from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
 from concurrent.futures import Future
 
 from support_classes.camera_interface import Capture
@@ -8,6 +8,7 @@ from support_classes.settings_interface import read_setting
 from .async_levelsensor import LevelSensor, LevelReading, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
+from .async_logger import DataLogger
 import numpy as np
 from abc import ABC
 import copy
@@ -39,6 +40,9 @@ class LevelException(BaseException):
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
+class LoggerException(BaseException):
+    pass
+
 class Pump(AsyncRunner,Teardown):
 
     def __init__(self, serial_interface: GenericInterface, **kwargs) -> None:
@@ -48,26 +52,15 @@ class Pump(AsyncRunner,Teardown):
 
         self.state: SharedState[PumpState] = SharedState[PumpState]()
 
-        settings = read_settings()
-
-        self.__log_levels: bool = settings[Settings.LOG_LEVELS]
-        self.__log_pid: bool = settings[Settings.LOG_PID]
-        self.__log_speeds: bool = settings[Settings.LOG_SPEEDS]
-    
-        self.logging_state: SharedState[bool] = SharedState[bool](False)
-
-        self.__level_logging_state: SharedState[bool] = SharedState[bool](False)
-        self.__pid_logging_state: SharedState[bool] = SharedState[bool](False)
-        self.__polling_logging_state: SharedState[bool] = SharedState[bool](False)
-        
-        self.__level: LevelSensor = LevelSensor(logging_state=self.__level_logging_state)
+        self.__level: LevelSensor = LevelSensor()
         self.__pid: PIDRunner = PIDRunner(self.__level.state,
                                           self.__serial_interface,
                                           self.__level.sensed_event,
-                                          logging_state=self.__pid_logging_state,
                                           )
-        self.__poller: SerialReader = SerialReader(self.__serial_interface,
-                                                   logging_state=self.__polling_logging_state)
+        self.__poller: SerialReader = SerialReader(self.__serial_interface)
+        self.__logger: DataLogger = DataLogger(self.__poller.state,self.__pid.state,self.__level.state)
+        
+        settings = read_settings()
         self.change_settings(settings)
 
 
@@ -117,7 +110,7 @@ class Pump(AsyncRunner,Teardown):
             self.state.set_value(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            self.state.set_value(PIDException(str(ge)))
+            self.state.set_value(ErrorState(PIDException(str(ge))))
         finally:
             self.stop_pid()
 
@@ -201,28 +194,39 @@ class Pump(AsyncRunner,Teardown):
         self.run_sync(self.__level.set_parameters,args = level_args)
 
         #----------------- Data settings --------------------
-        if Settings.LEVEL_DIRECTORY in modified_keys:
-            self.__level.set_dir(modifications[Settings.LEVEL_DIRECTORY])
-        if Settings.PID_DIRECTORY in modified_keys:
-            self.__pid.set_dir(modifications[Settings.PID_DIRECTORY])
-        if Settings.SPEED_DIRECTORY in modified_keys:
-            self.__poller.set_dir(modifications[Settings.SPEED_DIRECTORY])
+        # if Settings.LEVEL_DIRECTORY in modified_keys:
+        #     self.__level.set_dir(modifications[Settings.LEVEL_DIRECTORY])
+        # if Settings.PID_DIRECTORY in modified_keys:
+        #     self.__pid.set_dir(modifications[Settings.PID_DIRECTORY])
+        # if Settings.SPEED_DIRECTORY in modified_keys:
+        #     self.__poller.set_dir(modifications[Settings.SPEED_DIRECTORY])
         
-        if Settings.LOG_LEVELS in modified_keys:
-            self.__log_levels = modifications[Settings.LOG_LEVELS]
-            self.__level_logging_state.set_value(self.__log_levels and self.logging_state.force_value())
-        if Settings.LOG_PID in modified_keys:
-            self.__log_pid = modifications[Settings.LOG_PID]
-            self.__pid_logging_state.set_value(self.__log_pid and self.logging_state.force_value())
-        if Settings.LOG_SPEEDS in modified_keys:
-            self.__log_speeds = modifications[Settings.LOG_SPEEDS]
-            self.__polling_logging_state.set_value(self.__log_speeds and self.logging_state.force_value())
+        # if Settings.LOG_LEVELS in modified_keys:
+        #     self.__log_levels = modifications[Settings.LOG_LEVELS]
+        #     self.__level_logging_state.set_value(self.__log_levels and self.logging_state.force_value())
+        # if Settings.LOG_PID in modified_keys:
+        #     self.__log_pid = modifications[Settings.LOG_PID]
+        #     self.__pid_logging_state.set_value(self.__log_pid and self.logging_state.force_value())
+        # if Settings.LOG_SPEEDS in modified_keys:
+        #     self.__log_speeds = modifications[Settings.LOG_SPEEDS]
+        #     self.__polling_logging_state.set_value(self.__log_speeds and self.logging_state.force_value())
+        if _contains_any(LOGGING_SETTINGS,modifications):
+            logger_mods = {key:modifications[key] for key in modified_keys if key in LOGGING_SETTINGS}
+            self.run_sync(self.__logger.set_parameters,args=(logger_mods,))
 
-    def set_logging(self,new_state: bool):
-        self.__level_logging_state.set_value(self.__log_levels and new_state)
-        self.__pid_logging_state.set_value(self.__log_pid and new_state)
-        self.__polling_logging_state.set_value(self.__log_speeds and new_state)
-        self.logging_state.set_value(new_state)
+    def start_logging(self):
+        self.run_async(self.__logger.generate(),callback=self.__logger_check_error)
+        return self.__logger.is_running
+    def __logger_check_error(self,future:Future):
+        try:
+            future.result()
+        except GeneratorException as ge:
+            self.state.set_value(ErrorState(LoggerException(str(ge))))
+        finally:
+            self.stop_pid()
+    
+    def stop_logging(self):
+        self.__logger.stop()
 
     def teardown(self):
         # print("running teardown")

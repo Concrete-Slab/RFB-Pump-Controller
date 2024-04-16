@@ -23,6 +23,11 @@ class CaptureBackend(Enum):
     CV2_DSHOW = "DirectShow (OpenCV)"
     CV2_QT = "QuickTime (OpenCV)"
 
+class ImageFilterType(Enum):
+    OTSU = "otsu"
+    LINKNET = "linknet"
+    NONE = "none (no fluid detection)"
+
 CV2_BACKENDS = set([CaptureBackend.CV2_MSMF,CaptureBackend.CV2_V4L2,CaptureBackend.CV2_VFW,CaptureBackend.CV2_WINRT,CaptureBackend.CV2_QT,CaptureBackend.CV2_DSHOW])
 
 SETTINGS_FILENAME = "settings.json"
@@ -81,15 +86,19 @@ class Settings(Enum):
     """Full path to directory where images are saved"""
     LOG_IMAGES = "log_images"
     """True if images from level sensor are to be saved"""
+    LOGGING_PERIOD = "logging_period"
+    """Period between rows in logger csv"""
+    IMAGE_FILTER = "image_filter"
+    """The algorithm used to filter the level from fluid images"""
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.LOG_LEVELS: True,
     Settings.LOG_PID: True,
     Settings.LOG_SPEEDS: False,
-    Settings.LEVEL_DIRECTORY: (__thispath / "pumps/levels").as_posix(),
-    Settings.PID_DIRECTORY: (__thispath / "pumps/duties").as_posix(),
-    Settings.SPEED_DIRECTORY: (__thispath / "pumps/speeds").as_posix(),
+    Settings.LEVEL_DIRECTORY: (__thispath / "pumps/experiment_0/levels").as_posix(),
+    Settings.PID_DIRECTORY: (__thispath / "pumps/experiment_0/duties").as_posix(),
+    Settings.SPEED_DIRECTORY: (__thispath / "pumps/experiment_0/speeds").as_posix(),
     Settings.VIDEO_DEVICE: 0,
     Settings.ANOLYTE_PUMP: None,
     Settings.CATHOLYTE_PUMP: None,
@@ -114,12 +123,15 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.INTEGRAL_GAIN: 0.005,
     Settings.DERIVATIVE_GAIN: 0,
     Settings.IMAGE_SAVE_PERIOD: 60,
-    Settings.IMAGE_DIRECTORY: (__thispath/"pumps/images").as_posix(),
+    Settings.IMAGE_DIRECTORY: (__thispath/"pumps/experiment_0/images").as_posix(),
     Settings.LOG_IMAGES: False,
+    Settings.LOGGING_PERIOD: 5.0,
+    Settings.IMAGE_FILTER: ImageFilterType.LINKNET,
 }
 
-LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY,Settings.IMAGE_DIRECTORY])
-LOGGING_SETTINGS = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LOG_IMAGES,*LOG_DIRECTORIES])
+_LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY,Settings.IMAGE_DIRECTORY])
+_LOG_STATES = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LOG_IMAGES])
+LOGGING_SETTINGS = set([Settings.LOGGING_PERIOD,Settings.IMAGE_SAVE_PERIOD,*_LOG_DIRECTORIES,*_LOG_STATES])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
 PID_SETTINGS = set([*PID_PUMPS,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
 CAMERA_SETTINGS = set([Settings.IMAGE_SAVE_PERIOD,Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
@@ -175,7 +187,7 @@ def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
         if isinstance(pmp,PumpNames):
             final_settings[pmpsetting.value] = pmp.value
     # convert from Path to str
-    for pathsetting in LOG_DIRECTORIES:
+    for pathsetting in _LOG_DIRECTORIES:
         path = final_settings[pathsetting.value]
         if isinstance(path,Path):
             final_settings[pathsetting.value] = path.as_posix()
@@ -183,8 +195,10 @@ def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
     be = final_settings[Settings.CAMERA_BACKEND.value]
     if isinstance(be,CaptureBackend):
         final_settings[Settings.CAMERA_BACKEND.value] = be.value
-    
-
+    # convert from ImageFilterType to str
+    ift = final_settings[Settings.IMAGE_FILTER.value]
+    if isinstance(ift,ImageFilterType):
+        final_settings[Settings.IMAGE_FILTER.value] = ift.value
     # write to file
     with open(SETTINGS_FILENAME,"w") as f:
         json.dump(final_settings,f)
@@ -210,7 +224,7 @@ def __cast_to_correct_type(key,value):
     if key in PID_PUMPS:
         if value is not None:
             value = PumpNames(value)
-    elif key in LOG_DIRECTORIES:
+    elif key in _LOG_DIRECTORIES:
         if value is not None:
             value = Path(value)
         else:
@@ -219,6 +233,11 @@ def __cast_to_correct_type(key,value):
     elif key == Settings.CAMERA_BACKEND:
         if value is not None:
             value = CaptureBackend(value)
+        else:
+            value = DEFAULT_SETTINGS[key]
+    elif key == Settings.IMAGE_FILTER:
+        if value is not None:
+            value = ImageFilterType(value)
         else:
             value = DEFAULT_SETTINGS[key]
     return value

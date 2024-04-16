@@ -1,0 +1,47 @@
+{
+    "dataset": "320x320",
+    "batch_size": 1,
+    "ensure_factor": 32,
+    "learning_rate": 1e-3,
+    "tune_batch_size": false,
+    "max_epochs": 1,
+    "min_epochs": 1,
+    "proportion_testing": 0.02,
+    "proportion_validation": 0.15,
+    "random_seed": 42,
+    "num_workers": 4,
+    "pin_memory": true,
+    "persistent_workers": true,
+    "alpha_channel": false,
+    "matmul_precision": "high",
+    "precision": "16-mixed",
+    "shuffle_dataset": true,
+    "lr_scheduler": {
+        "class": "CosineAnnealingWarmRestarts",
+        "args": {
+            "T_0": 300,
+            "eta_min": 1e-4,
+            "interval": "step",
+            "frequency": 1
+        }
+    },
+    "callbacks": {
+        "EarlyStopping":{
+            "monitor": "mean_val_loss",
+            "patience": 50,
+            "check_on_train_epoch_end": true
+        },
+        "ModelCheckpoint":{
+            "monitor":"mean_val_loss",
+            "save_top_k":1,
+            "save_last":true
+        },
+        "LearningRateMonitor":{
+            "logging_interval":"epoch"
+        },
+        "StochasticWeightAveraging":{
+            "swa_lrs":1e-5,
+            "swa_epoch_start":500
+        }
+    }
+}

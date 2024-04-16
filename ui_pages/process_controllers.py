@@ -132,7 +132,7 @@ class LevelProcess(BaseProcess):
             
             if len(self._removal_callbacks) == 0:
                 self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
-    
+
     def __handle_running(self,isrunning: bool):
         if self._controller_context:
             if isrunning:
@@ -175,13 +175,22 @@ class DataProcess(BaseProcess):
         return "Data Logging"
     def start(self):
         if self._pump_context and self._controller_context:
-            self._pump_context.set_logging(True)
-            self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.DATA)
+            state_running = self._pump_context.start_logging()
+            if len(self._removal_callbacks) == 0:
+                self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
     
     def close(self):
         if self._pump_context and self._controller_context:
-            self._pump_context.set_logging(False)
+            self._pump_context.stop_logging()
             self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.DATA)
+
+    def __handle_running(self,newstate: bool):
+        if self._controller_context:
+            if newstate:
+                self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.DATA)
+            else:
+                self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.DATA)
+        
 
     @property
     def has_settings(self) -> bool:

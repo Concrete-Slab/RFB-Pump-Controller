@@ -18,15 +18,12 @@ PID_PAUSE_MARGIN = 1.5
 PID_DATA_TIMEOUT = 1.0
 """"Seconds that the PID controller will wait for new data before checking loop conditions. Essentially only determines how long it will take to kill the PID process once level process is killed"""
 
-class PIDRunner(Generator[Duties],Loggable):
+class PIDRunner(Generator[Duties]):
 
-    LOG_COLUMN_HEADERS = ["Timestamp", "Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
 
     def __init__(self, 
                  level_state: SharedState[tuple[LevelReading,np.ndarray|None]], 
                  serial_interface: GenericInterface, level_event: asyncio.Event, 
-                 logging_state: SharedState[bool]=SharedState(False), 
-                 absolute_logging_directory: Path = DEFAULT_SETTINGS[Settings.PID_DIRECTORY], 
                  base_duty: int = DEFAULT_SETTINGS[Settings.BASE_CONTROL_DUTY], 
                  refill_time: int = DEFAULT_SETTINGS[Settings.REFILL_TIME],
                  refill_duty: int = DEFAULT_SETTINGS[Settings.REFILL_DUTY],
@@ -41,7 +38,7 @@ class PIDRunner(Generator[Duties],Loggable):
                  catholyte_refill_pump: PumpNames|None = DEFAULT_SETTINGS[Settings.CATHOLYTE_REFILL_PUMP], 
                  **kwargs) -> None:
 
-        super().__init__(directory = absolute_logging_directory, default_headers = PIDRunner.LOG_COLUMN_HEADERS)
+        super().__init__()
 
         
 
@@ -65,7 +62,6 @@ class PIDRunner(Generator[Duties],Loggable):
 
         self.__input_state = level_state
         self.__serial_interface = serial_interface
-        self.__logging_state = logging_state
         self.__level_event = level_event
         self.__pid: PID | None = None
         self.__refill_start_time: float | None = None
@@ -80,7 +76,6 @@ class PIDRunner(Generator[Duties],Loggable):
         self.__pid.set_auto_mode(False)
         await asyncio.sleep(3)
         self.__pid.set_auto_mode(True, last_output=-.28)
-        self.new_file()
 
     async def _loop(self) -> Duties|None:
 
@@ -124,10 +119,10 @@ class PIDRunner(Generator[Duties],Loggable):
 
             # Calculate the average of the buffer readings
             # positive if anolyte volume greater than catholyte volume
-            error = last_readings[3]
+            error = last_readings[2]
 
-            volume_change = last_readings[4]
-            init_volume = last_readings[1] + last_readings[2] - volume_change
+            volume_change = last_readings[3]
+            init_volume = last_readings[0] + last_readings[1] - volume_change
             
             # Perform the PID control (rounded as duty is an integer)
             control = round(self.__pid(error))
@@ -137,12 +132,6 @@ class PIDRunner(Generator[Duties],Loggable):
             (flowRateAn,flowRateCath,pid_duties) = await self.__handle_pid(control)
 
             duties: Duties = {**pid_duties,**refill_duties}
-
-            # Optionally, save the new duties in the data file as a new line
-            if self.__logging_state.force_value():
-                timestamp = datetime.datetime.now().strftime("%m-%d-%Y %H-%M-%S")
-                data = [timestamp, flowRateAn, flowRateCath,flowRateRefillAnolyte,flowRateRefillCatholyte]
-                self.log(data)
             return duties
         return None
 

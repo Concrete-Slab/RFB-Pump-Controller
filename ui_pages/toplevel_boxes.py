@@ -1,8 +1,9 @@
 import customtkinter as ctk
 from PIL import Image
-import cv2
+from support_classes.settings_interface import read_setting
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
-from support_classes import capture, CaptureException, read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture
+from support_classes import read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture, CAMERA_SETTINGS
+from cv2_gui.cv2_multiprocessing import InputProcess
 # #TODO make independent of model class
 # from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from typing import Generic,ParamSpec,Callable,Any,TypeVar, Protocol
@@ -10,8 +11,6 @@ from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
 import threading
 import copy
-import pynput.keyboard as pyin
-import time
 
 SuccessSignature = ParamSpec("SuccessSignature")
 
@@ -477,7 +476,7 @@ def _str2json(str_result: str) -> PumpNames|None:
         out = PumpNames(res)
     return out
 
-Rect = tuple[int,int,int,int] 
+Rect = tuple[int,int,int,int]
 
 class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
 
@@ -488,13 +487,18 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
     def __init__(self, master: ctk.CTk,*args, on_success: Callable[[int,Rect,Rect,Rect,float],None] | None = None, on_failure: Callable[[None],None] | None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master,*args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.title(self.ALERT_TITLE)
-        self.__video_device = Capture.from_settings()
+        self.__video_params = read_settings(*CAMERA_SETTINGS)
+
+        self.__filter_type = read_setting(Settings.IMAGE_FILTER)
         
-        self.__cv2_exit_condition = threading.Event()
+        # multiprocessing variables
+        # self.__cv2_exit_condition = mp.Event()
         self.__unregister_exit_condition: Callable[[None],None]|None = None
-        self.__cv2_shared_state: SharedState[tuple[Rect,Rect,Rect]] = SharedState()
-        self.__error_state: SharedState[BaseException] = SharedState()
-        self.__cv2_thread: threading.Thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state,self.__error_state])
+        # self.__cv2_shared_state: MPSharedState[tuple[Rect,Rect,Rect]] = MPSharedState()
+        # self.__error_state: MPSharedState[BaseException] = MPSharedState()
+        # self.__cv2_thread: mp.Process = mp.Process(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state,self.__error_state,self.__input_list])
+
+        self.__cv2_process = InputProcess(self.__filter_type,self.__video_params,window_name="Set up level visualisation")
 
         self.__r1: tuple[int,int,int,int]|None = None
         self.__r2: tuple[int,int,int,int]|None = None
@@ -541,11 +545,17 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
     def __confirm_initial(self):
         if self.confirm_button._state == ctk.NORMAL:
             self.confirm_button.configure(state=ctk.DISABLED)
-            self.__cv2_thread.start()
-            self.__unregister_exit_condition = self._add_event(self.__cv2_exit_condition,self.__check_regions)
+            self.__cv2_process.start()
+            self.__unregister_exit_condition = self._add_event(self.__cv2_process.exit_flag,self.__check_regions)
 
     def __bad_regions(self,error: BaseException | None):
-            errormsg = str(error) if error else "Please select exactly 3 regions"
+            match InputProcess.ErrorCode(error):
+                case InputProcess.ErrorCode.INCORRECT_SELECTION:
+                    errormsg = "Please select exactly 3 regions"
+                case InputProcess.ErrorCode.CAPTURE_ERROR:
+                    errormsg = "Camera failed to take picture"
+                case _:
+                    errormsg = "Unknown Error"
             self.lblvar.set(errormsg)
             self.msg_lbl.configure(text_color=ApplicationTheme.ERROR_COLOR)
             self.confirm_button.configure(state=ctk.NORMAL)
@@ -558,13 +568,15 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         self.initial_frame.pack()
 
     def __check_regions(self):
+        with self.__cv2_process.output_data.get_lock():
+            rects = [int(val) for val in self.__cv2_process.output_data]
+        with self.__cv2_process.error_data.get_lock():
+            error = int(self.__cv2_process.error_data.value)
         self.__teardown_thread()
-        rects = self.__cv2_shared_state.get_value()
-        error = self.__error_state.get_value()
-        if rects is not None and len(rects) == 3 and error is None:
-            self.__r1 = rects[0]
-            self.__r2 = rects[1]
-            self.__h = rects[2]
+        if all(val>0 for val in rects) and len(rects) == 9 and error==0:
+            self.__r1 = tuple(rects[0:4])
+            self.__r2 = tuple(rects[4:8])
+            self.__h = rects[8]
             self.__select_volumes()
         else:
             self.__bad_regions(error)
@@ -579,21 +591,11 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         if self.__unregister_exit_condition:
             self.__unregister_exit_condition()
             self.__unregister_exit_condition = None
-        if self.__cv2_thread.is_alive():
-            self.__cv2_exit_condition.set()
-            # mock a press of the ESC button to trick the cv2 thread into continuing past the selectROIs() block
-            keyboard = pyin.Controller()
-            keyboard.press(pyin.Key.esc)
-            time.sleep(0.1)
-            keyboard.release(pyin.Key.esc)
-            try:
-                cv2.waitKey(1)
-                cv2.destroyWindow("Select Regions")
-            except:
-                pass
-            self.__cv2_thread.join()
-            self.__cv2_exit_condition.clear()
-        self.__cv2_thread = threading.Thread(target=_select_regions,args=[self.__video_device,self.__cv2_exit_condition,self.__cv2_shared_state,self.__error_state])
+        if self.__cv2_process.is_alive():
+            self.__cv2_process.terminate()
+            self.__cv2_process.join()
+            self.__cv2_process.exit_flag.clear()
+        self.__cv2_process = InputProcess(self.__filter_type,self.__video_params,window_name="Set up level visualisation")
 
     def __confirm_volumes(self):
         ref_vol_str = self.refvar.get()
@@ -606,30 +608,6 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
     def destroy(self):
         super().destroy()
         self.__teardown_thread()
-
-def _select_regions(capture_device: Capture, exit_condition: threading.Event, shared_state: SharedState[tuple[Rect,Rect,Rect]],error_state:SharedState[BaseException]):
-    try:
-        img = capture(capture_device)
-    except CaptureException as ce:
-        exit_condition.set()
-        error_state.set_value(ce)
-    if exit_condition.is_set():
-        return
-    cv2.namedWindow("Select Regions")
-    if exit_condition.is_set():
-        cv2.destroyAllWindows()
-        return
-    try:
-        rects = cv2.selectROIs("Select Regions",img)
-        if len(rects) != 3:
-            error_state.set_value(_ROIException("Exactly 3 regions were not selected"))
-        else:
-            shared_state.set_value(rects)
-    finally:
-        exit_condition.set()
-        cv2.destroyAllWindows()
-        return
-class _ROIException(BaseException): ...
 
 class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
@@ -927,10 +905,12 @@ class _WidgetGroup:
 
 T = TypeVar("T")
 class _SettingVariable(Generic[T]):
-    def __init__(self,var: ctk.StringVar,setting: Settings,validator: Callable[[T],bool] = lambda _: True, map_fun: Callable[[str],T]|None = None) -> None:
+    def __init__(self,var: ctk.StringVar,setting: Settings,validator: Callable[[T],bool]|None = None, map_fun: Callable[[str],T]|None = None) -> None:
         self.__var = var
         self.__setting = setting
         self.fun = map_fun
+        if validator is None:
+            validator = lambda _: True
         self.__validator = validator
         self.widget: ctk.CTkBaseClass|None = None
     def get(self) -> str:
@@ -1164,5 +1144,3 @@ def _validate_gain(str_in: str, allow_empty = True) -> bool:
         return True
     except:
         return False
-    
-    
