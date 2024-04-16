@@ -140,6 +140,7 @@ class CV2Capture(Capture):
             if rescale:
                 imshape = img.shape
                 img = cv2.resize(img,(int(imshape[1]*self._scale_factor),int(imshape[0]*self._scale_factor)))
+            img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
             return img
         raise CaptureException("Camera has not been opened")
 
