@@ -13,6 +13,15 @@ import numpy as np
 from abc import ABC
 import copy
 
+def _ignore_attrerror(fun):
+    def inner(*args,**kwargs):
+        try:
+            return fun(*args,**kwargs)
+        except AttributeError:
+            pass
+    return inner
+
+
 class PumpState(ABC):
     pass
 
@@ -96,6 +105,7 @@ class Pump(AsyncRunner,Teardown):
         finally:
             self.stop_pid()
 
+    @_ignore_attrerror
     def stop_polling(self):
         self.__poller.stop()
         
@@ -114,6 +124,7 @@ class Pump(AsyncRunner,Teardown):
         finally:
             self.stop_pid()
 
+    @_ignore_attrerror
     def stop_pid(self):
         self.__pid.stop()
 
@@ -140,6 +151,7 @@ class Pump(AsyncRunner,Teardown):
         finally:
             self.stop_levels()
 
+    @_ignore_attrerror
     def stop_levels(self):
         self.__level.stop()
 
@@ -225,6 +237,7 @@ class Pump(AsyncRunner,Teardown):
         finally:
             self.stop_pid()
     
+    @_ignore_attrerror
     def stop_logging(self):
         self.__logger.stop()
 
@@ -290,12 +303,12 @@ class Pump(AsyncRunner,Teardown):
         self.__serial_interface.close()
 
     async def __close_without_error(self,pmp: PumpNames):
-                    try:
-                        await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
-                        new_state = ActiveState({pmp:0})
-                        self.state.set_value(new_state)
-                    except InterfaceException:
-                        pass
+        try:
+            await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
+            new_state = ActiveState({pmp:0})
+            self.state.set_value(new_state)
+        except InterfaceException:
+            pass
 
 def is_duty(duty: int):
     if duty >= 0 and duty <= 255:
