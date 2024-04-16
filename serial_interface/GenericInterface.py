@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 import serial.tools.list_ports
-import atexit
 
 class GenericInterface(ABC):
 

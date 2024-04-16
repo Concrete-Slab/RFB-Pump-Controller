@@ -2,9 +2,7 @@ from typing import Any, Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
 from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
 from concurrent.futures import Future
-
 from support_classes.camera_interface import Capture
-from support_classes.settings_interface import read_setting
 from .async_levelsensor import LevelSensor, LevelReading, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading

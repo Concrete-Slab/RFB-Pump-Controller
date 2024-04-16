@@ -1,11 +1,6 @@
 import torch
 from torch import nn, Tensor
-from torch.optim import Optimizer
-import torch.nn.functional as F
-from torchvision import transforms
 import torchvision.transforms.functional as TF
-from torch.utils.data import DataLoader
-import lightning as L
 
 class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):

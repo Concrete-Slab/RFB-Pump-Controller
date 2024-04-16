@@ -1,20 +1,16 @@
-import math
 import os
 from vision_model.level_filters import LevelFilter
-from support_classes import Generator, SharedState, GeneratorException, Loggable, Settings, DEFAULT_SETTINGS, Capture, FileCapture, ImageFilterType
+from support_classes import Generator, GeneratorException, Settings, DEFAULT_SETTINGS, Capture, FileCapture, ImageFilterType
 from support_classes.camera_interface import FileCapture
 import cv2_gui.cv2_multiprocessing as cvmp
 from .timeavg import TimeAvg
-from typing import Any, Callable
+from typing import Any
 import cv2
 import asyncio
 import time
 from pathlib import Path
 import numpy as np
 import copy
-import multiprocessing as mp
-import threading
-
 
 #TODO change this to typing.Sequence[int] if error
 Rect = tuple[int,int,int,int]

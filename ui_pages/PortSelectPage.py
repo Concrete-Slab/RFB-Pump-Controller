@@ -2,8 +2,7 @@ import customtkinter as ctk
 from typing import Any
 from pathlib import Path
 from PIL import Image
-
-from support_classes.settings_interface import read_setting,Settings,DEFAULT_SETTINGS, read_settings
+from support_classes.settings_interface import Settings, read_settings
 from .UIController import UIController
 from .PAGE_EVENTS import PSEvents
 import copy

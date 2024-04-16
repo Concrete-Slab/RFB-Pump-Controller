@@ -1,6 +1,6 @@
 import copy
 import json
-from typing import Any, Callable, Generic, Iterable, TypeVar
+from typing import Callable, Iterable, TypeVar
 import numpy as np
 from PIL import Image
 import csv

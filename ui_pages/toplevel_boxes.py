@@ -5,7 +5,6 @@ from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
 from support_classes import read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture, CAMERA_SETTINGS
 from cv2_gui.cv2_multiprocessing import InputProcess
 # #TODO make independent of model class
-# from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from typing import Generic,ParamSpec,Callable,Any,TypeVar, Protocol
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme

@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from .themes import ApplicationTheme
-from typing import Callable, Generic, TypeVar
+from typing import Callable, TypeVar
 T = TypeVar("T")
 
 

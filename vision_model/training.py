@@ -1,4 +1,3 @@
-from UNET import UNET
 from segmentation_model import SegmentationModule
 import segmentation_models_pytorch as smp
 import lightning.pytorch as pl
@@ -10,8 +9,8 @@ import cv2
 from pathlib import Path
 from tensorboard_addon import tblogger
 from datamodules import SegmentationDataModule,DataModule
-from torch.profiler import profile,ProfilerActivity
-from torch.utils.viz._cycles import warn_tensor_cycles
+# from torch.profiler import profile,ProfilerActivity
+# from torch.utils.viz._cycles import warn_tensor_cycles
 
 def tune(trainer: pl.Trainer,model: pl.LightningModule,datamodule: DataModule,strict=True):
     print("Tuning batch size")

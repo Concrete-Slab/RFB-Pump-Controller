@@ -3,7 +3,6 @@ import threading
 from typing import Coroutine, Any, TypeVar, Callable, Dict, Iterable
 from concurrent.futures import Future
 from abc import ABC, abstractmethod
-from .Teardown import Teardown
 
 T = TypeVar("T")
 

@@ -1,4 +1,3 @@
-from queue import Queue
 from abc import ABC, abstractmethod
 import asyncio
 from .shared_state import SharedState

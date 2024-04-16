@@ -3,14 +3,13 @@ import Datasets.dataset as ds
 from pathlib import Path
 from GLOBALS import Configuration
 import albumentations as A
-from dataclasses import dataclass
 import torch
 import torch.utils.data as data
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 import math
 
 DEFAULTS = Configuration()
-class DataModule(L.LightningDataModule):
+class DataModule(L.LightningDataModule,ABC):
     def __init__(self,
         dataset_path: Path,
         transforms: A.BasicTransform|None = None,

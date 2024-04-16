@@ -1,5 +1,4 @@
 from typing import Any, Iterable
-
 from support_classes.settings_interface import CAMERA_SETTINGS, Settings
 from .UIController import UIController
 from ui_root import UIRoot

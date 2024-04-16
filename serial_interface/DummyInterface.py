@@ -1,7 +1,6 @@
-from .GenericInterface import GenericInterface, InterfaceException
+from .GenericInterface import InterfaceException
 from .SerialInterface import write_loop,read_loop,SerialInterface
 from support_classes import PumpNames, SharedState
-import asyncio
 import random
 import threading
 import queue

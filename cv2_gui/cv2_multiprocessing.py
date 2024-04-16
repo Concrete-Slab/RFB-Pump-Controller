@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Any, Iterable, Mapping
+from typing import Any
 import multiprocessing as mp
-from support_classes import SharedState, Capture, CaptureException, Teardown, capture, ImageFilterType, Settings
+from support_classes import SharedState, Capture, CaptureException, capture, ImageFilterType, Settings
 from vision_model.level_filters import LevelFilter
 from .mouse_events import EscException, MouseInput
 import cv2

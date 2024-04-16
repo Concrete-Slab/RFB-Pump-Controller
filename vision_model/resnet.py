@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from abc import ABC, abstractclassmethod, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 
 class ReLUConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size=1, stride: int|None=None, bias=True, rectify=True,pad=0) -> None:
@@ -27,13 +27,16 @@ class ResBlock(nn.Module,ABC):
     @abstractmethod
     def forward(self,x: torch.Tensor) -> torch.Tensor:
         pass
-    @abstractproperty
+    @property
+    @abstractmethod
     def in_channels(self) -> int:
         pass
-    @abstractproperty
+    @property
+    @abstractmethod
     def out_channels(self) -> int:
         pass
-    @abstractclassmethod
+    @classmethod
+    @abstractmethod
     def generate_network(self,in_channels: int, out_features: int, repetition_list: list[int], pooled=False, entry_channels=64) -> "BaseResNet":
         pass
 

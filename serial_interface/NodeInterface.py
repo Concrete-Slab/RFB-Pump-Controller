@@ -1,5 +1,3 @@
-import serial.tools.list_ports
-import serial
 import asyncio
 import threading
 from .GenericInterface import GenericInterface, InterfaceException

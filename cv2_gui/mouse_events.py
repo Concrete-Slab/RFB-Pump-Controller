@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 import copy
 import numpy as np
 import cv2
-from contextlib import contextmanager
 import multiprocessing as mp
 
 ESC = 27

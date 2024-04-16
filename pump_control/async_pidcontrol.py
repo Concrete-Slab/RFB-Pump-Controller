@@ -1,14 +1,11 @@
 from typing import Any, Iterable
 import numpy as np
 from simple_pid import PID
-import datetime
-
 from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from .async_levelsensor import LevelReading
 from serial_interface import GenericInterface
 import asyncio
-from support_classes import Generator,SharedState,Loggable, DEFAULT_SETTINGS, Settings, PumpNames
-from pathlib import Path
+from support_classes import Generator,SharedState, DEFAULT_SETTINGS, Settings, PumpNames
 import time
 
 Duties = dict[PumpNames,int]
