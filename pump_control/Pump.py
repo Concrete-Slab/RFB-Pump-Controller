@@ -233,7 +233,7 @@ class Pump(AsyncRunner,Teardown):
         except GeneratorException as ge:
             self.state.set_value(ErrorState(LoggerException(str(ge))))
         finally:
-            self.stop_pid()
+            self.stop_logging()
     
     @_ignore_attrerror
     def stop_logging(self):
