@@ -103,7 +103,6 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
         self._filter.setup()
         # set an initial sleep time. this is recalculated at each iteration of the loop
         self.__sleep_time = 0.5
-        # self.__display_thread = threading.Thread(target=_continuous_display,args=(self.__display_state,self.__display_flag))
         self.__cv2_process.start()
 
     async def _loop(self) -> tuple[LevelReading|None,np.ndarray]|None:
@@ -150,12 +149,7 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
 
         #---------------DISPLAY-------------------
         unaltered_frame = copy.copy(frame)
-        # # draw the level lines on the original and filtered images
-        # if not isnan(avg_an) and not isnan(avg_cath):
-        #     _draw_level(frame_an,vol_an/self.__scale)
-        #     _draw_level(frame_cath,vol_cath/self.__scale)
-        #     _draw_level(original_frame[self.__indexAn[0],self.__indexAn[1],:],avg_an/self.__scale)
-        #     _draw_level(original_frame[self.__indexCath[0],self.__indexCath[1],:],avg_cath/self.__scale)
+
         # place the filtered images onto the original image
         frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
@@ -169,8 +163,6 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
         cv2.putText(frame, f'Diff: {avg_diff} mL', (10,140), cv2.FONT_HERSHEY_SIMPLEX, 
                     0.75, (0, 0, 255), 2, cv2.LINE_AA)
 
-        # # concatenate original and filtered images
-        # displayimg = np.concatenate((frame,original_frame),axis=1)
         # send to display thread
         self.__cv2_process.input.set_value(frame)
 
@@ -187,8 +179,7 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
         data = [avg_an, avg_cath, avg_diff,avg_change]
 
         # save the data to exposed state
-        # self.__buffer.add(data)
-        self.state.set_value((data,cv2.cvtColor(unaltered_frame,cv2.COLOR_BGR2RGB)))
+        self.state.set_value((data,unaltered_frame))
         # additional asyncio event set for pid await line
         self.sensed_event.set()
 

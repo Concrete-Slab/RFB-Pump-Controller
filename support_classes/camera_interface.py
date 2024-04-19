@@ -277,8 +277,6 @@ class PygameCapture(Capture):
             if rescale:
                 imshape = img.shape
                 img = cv2.resize(img,(int(imshape[1]*self._scale_factor),int(imshape[0]*self._scale_factor)))
-            if self.__backend not in CV2Capture.get_backends():
-                img = cv2.cvtColor(img,cv2.COLOR_BGR2RGB)
             return img
         except RuntimeError:
             print("Failed to take image")
@@ -291,7 +289,6 @@ class PygameCapture(Capture):
     def pygame_to_cv2(surf: Surface) -> ndarray:
         img = array3d(surf)
         img = img.transpose([1, 0, 2])
-        img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
         return img
 
 def _backend_to_pygame(be: CaptureBackend) -> str|None:
