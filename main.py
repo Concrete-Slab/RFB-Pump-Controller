@@ -1,7 +1,8 @@
 from App import App
-from support_classes.Teardown import TDExecutor
+from support_classes.Teardown import with_teardown
 import sys
 
+@with_teardown
 def main():
     if sys.gettrace():
         # run in debug mode
@@ -9,7 +10,6 @@ def main():
     else:
         app = App()
     app.mainloop()
-    TDExecutor.execute()
 
 if __name__ == '__main__':
     main()

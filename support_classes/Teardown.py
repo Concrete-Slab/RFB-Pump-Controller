@@ -28,5 +28,15 @@ class TDExecutor:
 
     def execute():
         for cb in TDExecutor.__teardowns:
-            cb()
+            try:
+                cb()
+            except:
+                continue
     
+def with_teardown(fun):
+    def inner(*args,**kwargs):
+        try:
+            return fun(*args,**kwargs)
+        finally:
+            TDExecutor.execute()
+    return inner
