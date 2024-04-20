@@ -67,11 +67,13 @@ def _median_box(mask: np.ndarray,fmt="coco") -> tuple[int,int,int,int]:
     ncols = reduced_mask.shape[1]
     npixels = np.zeros((ncols,))
     for i in range(0,ncols):
-        column = reduced_mask[:,i].astype(np.uint16)
+        column = reduced_mask[:,i,:]
+        column = np.mean(column,axis=1)
+        column = (column>0).astype(np.uint16)
         npixels[i] = np.sum(column)
     height = int(np.median(npixels))
 
-    bbox_out = (bbox[0], bbox[1] - (bbox[3]-height),bbox[2],height)
+    bbox_out = (bbox[0], bbox[1]+bbox[3]-height, bbox[2], height)
     return bbox_out
 
 def LinkNetFilter(ignore_level=False):
