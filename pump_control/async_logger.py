@@ -141,9 +141,9 @@ class DataLogger(Generator[None]):
     async def _loop(self) -> None:
         perftimer = time.time()
 
-        duties = self.duty_state.get_value()
-        lvl_tuple = self.level_state.get_value()
-        speeds = self.speed_state.get_value()
+        duties = self.duty_state.force_value()
+        lvl_tuple = self.level_state.force_value()
+        speeds = self.speed_state.force_value()
         t = time.time()-self.__initial_timestamp
         
         self._save_one(t,_DataType.DUTIES,duties)
