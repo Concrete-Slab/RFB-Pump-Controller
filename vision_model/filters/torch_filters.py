@@ -72,6 +72,7 @@ def _median_box(mask: np.ndarray,fmt="coco") -> tuple[int,int,int,int]:
     height = int(np.median(npixels))
 
     bbox_out = (bbox[0], bbox[1] - (bbox[3]-height),bbox[2],height)
+    return bbox_out
 
 def LinkNetFilter(ignore_level=False):
     return _SegmentationFilter(Path(__file__).parent/"linknet_320x320.ckpt",smp.Linknet(encoder_name="resnet50",encoder_weights=None),ignore_level=ignore_level)
