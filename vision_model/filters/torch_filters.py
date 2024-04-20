@@ -51,7 +51,7 @@ class _SegmentationFilter(LevelFilter):
 
         if all(mask.flatten()<=0): # mask has no detections of fluid
             return img,0.0
-        bbox = get_bbox(mask,fmt="coco")
+        bbox = _median_box(mask,fmt="coco")
         liquid_volume = bbox[3]*scale
         annotated_image = self._place_mask_on_image(img,mask)
         annotated_image = self._place_bbox_on_image(img,bbox)
@@ -59,9 +59,22 @@ class _SegmentationFilter(LevelFilter):
             liquid_volume = 0.0
         return (annotated_image*255).astype(np.uint8),liquid_volume
 
+def _median_box(mask: np.ndarray,fmt="coco") -> tuple[int,int,int,int]:
+    bbox = get_bbox(mask,fmt=fmt)
+    xslice = slice(bbox[0],bbox[0]+bbox[2])
+    yslice = slice(bbox[1],bbox[1]+bbox[3])
+    reduced_mask = mask[yslice,xslice]
+    ncols = reduced_mask.shape[1]
+    npixels = np.zeros((ncols,))
+    for i in range(0,ncols):
+        column = reduced_mask[:,i].astype(np.uint16)
+        npixels[i] = np.sum(column)
+    height = int(np.median(npixels))
+
+    bbox_out = (bbox[0], bbox[1] - (bbox[3]-height),bbox[2],height)
+
 def LinkNetFilter(ignore_level=False):
     return _SegmentationFilter(Path(__file__).parent/"linknet_320x320.ckpt",smp.Linknet(encoder_name="resnet50",encoder_weights=None),ignore_level=ignore_level)
     
-        
 
         
