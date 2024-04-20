@@ -249,6 +249,14 @@ class Pump(AsyncRunner,Teardown):
 
     async def emergency_stop(self,pumps: list[PumpNames]):
         """Stop all pumps. Since there is a mandatory delay between writes to the serial port, it is important to stop the pumps in the optimal order to minimise damage to the flow system. Pumps with high speeds are prioritised first. Within the high speed pumps, any pumps responsible for refilling the electrolyte reservoirs are handled first, followed by any electrolyte pumps. The low speed pumps are then handled in the same hierarchy"""
+        
+        try:
+            pid_pumps = [pmp for pmp in self.__pid.get_pumps().values() if pmp in pumps]
+            if self.__pid.is_running.force_value() and len(pid_pumps)>0:
+                self.__pid.stop()
+        except AttributeError:
+            pass
+        
         LOW_PRIORITY_SPEED = 900
         # find the pumps that are low priority
         all_speeds = self.__poller.state.force_value()

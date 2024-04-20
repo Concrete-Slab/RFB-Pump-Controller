@@ -83,7 +83,7 @@ class ControllerPage(ctk.CTkFrame):
         # add remaining controller listeners
 
         self.UIcontroller.add_listener(CEvents.ERROR,self.__on_error)
-        self.UIcontroller.add_listener(CEvents.ERROR,self.__on_ready)
+        self.UIcontroller.add_listener(CEvents.READY,self.__on_ready)
         self.UIcontroller.add_listener(CEvents.PROCESS_STARTED, lambda prefix: self.__set_switch_state(prefix,SwitchState.ON))
         self.UIcontroller.add_listener(CEvents.PROCESS_CLOSED, lambda prefix: self.__set_switch_state(prefix,SwitchState.OFF))
         self.UIcontroller.add_listener(CEvents.AUTO_DUTY_SET,self.__auto_duty_set)
