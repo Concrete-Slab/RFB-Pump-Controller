@@ -28,6 +28,9 @@ class SharedState(Generic[T]):
         with self._lock:
             return self.value
         
+    def has_value(self):
+        return self._event.is_set()
+        
 T = TypeVar("T")
 class MPSharedState(Generic[T]):
     def __init__(self, initialValue: T = None) -> None:

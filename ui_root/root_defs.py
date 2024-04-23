@@ -72,8 +72,9 @@ class UIRoot(ctk.CTk):
         # run queue callbacks
         states_dict = copy.copy(self.__states)
         for sharedstate in states_dict.keys():
-            val = sharedstate.get_value()
-            if val is not None:
+            val = sharedstate.force_value()
+            has_new = sharedstate.has_value()
+            if has_new and val is not None:
                 # if val is not none, it has been updated since last check
                 # check through each callback tuple in the shared state
                 for tup in states_dict[sharedstate]:
