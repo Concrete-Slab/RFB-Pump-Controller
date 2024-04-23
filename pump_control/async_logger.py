@@ -142,8 +142,14 @@ class DataLogger(Generator[None]):
         perftimer = time.time()
 
         duties = self.duty_state.force_value()
+        if duties is not None:
+            valid_duties = list(duties.values())
+            zero_padding = [0]*max(len(_HEADERS[_DataType.DUTIES])-len(valid_duties), 0)
+            duties = [*valid_duties,*zero_padding]
         lvl_data = self.level_state.force_value()
         speeds = self.speed_state.force_value()
+        if speeds is not None:
+            speeds = [spd for spd in speeds.values()]
         t = time.time()-self.__initial_timestamp
         
         self._save_one(t,_DataType.DUTIES,duties)
