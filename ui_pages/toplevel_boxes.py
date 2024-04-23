@@ -204,7 +204,8 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
         cancel_button.grid(row=1,column=0,padx=5,pady=5,sticky="w")
         
     def __select_from_explorer(self):
-        new_directory = ctk.filedialog.askdirectory(initialdir = self.__initial_directory,mustexist=True)
+        init_dir = self.__initial_directory.parent
+        new_directory = ctk.filedialog.askdirectory(initialdir = init_dir,mustexist=True)
         self.bring_forward()
         if new_directory != "":
             self.__directory_var.set(new_directory)
@@ -824,6 +825,7 @@ class LevelDisplay(AlertBox[None]):
     def __init__(self, master: UIRoot, level_state: SharedState[tuple[LevelReading|None,np.ndarray]], *args, on_success: Callable[[None], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.teardown_window = master.register_state(level_state,self.__update_display)
+        self.title = "Level Visualiser"
         
         self.initial_time = time.time()
 
