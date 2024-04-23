@@ -129,13 +129,11 @@ class LevelProcess(BaseProcess):
             if self._pump_context is not None:
                 self._pump_context.stop_levels()
         
-
-
         if self._pump_context and self._controller_context and self.level_data:
 
             (state_running,state_levels) = self._pump_context.start_levels(*self.level_data.as_tuple())
-            
-            box = self._controller_context. _create_alert(LevelDisplay,state_levels,on_failure=on_close,on_success=on_close)
+            display_state = state_levels.duplicate()
+            box = self._controller_context. _create_alert(LevelDisplay,display_state,on_failure=on_close,on_success=on_close)
             def on_levels_stopped(arg: ProcessName):
                 if self._pump_context is not None and arg == ProcessName.LEVEL:
                     box.destroy()

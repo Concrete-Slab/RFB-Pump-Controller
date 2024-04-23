@@ -1,6 +1,7 @@
 from typing import TypeVar, Generic
 from threading import Event, Lock
 import multiprocessing as mp
+import weakref
 
 T = TypeVar("T")
 class SharedState(Generic[T]):
@@ -9,11 +10,16 @@ class SharedState(Generic[T]):
         self.value: T | None = initialValue
         self._event = Event()
         self._lock = Lock()
+        self._duplicates: list[weakref.ReferenceType[SharedState]] = []
 
     def set_value(self,value: T):
         with self._lock:
             self.value = value
             self._event.set()
+            for ref in self._duplicates:
+                duplicate = ref()
+                if duplicate is not None:
+                    duplicate.set_value(value)
 
     def get_value(self) -> T | None:
         with self._lock:
@@ -28,9 +34,20 @@ class SharedState(Generic[T]):
         with self._lock:
             return self.value
         
-    def has_value(self):
-        return self._event.is_set()
-        
+    def duplicate(self) -> "SharedState[T]":
+        with self._lock:
+            out: SharedState[T] = SharedState[T](initialValue=self.value)
+            if self._event.is_set():
+                out._event.set()
+            ref = weakref.ref(out,self._remove_duplicate)
+            self._duplicates.append(ref)
+        return out
+    
+    def _remove_duplicate(self,ref):
+        with self._lock:
+            self._duplicates.remove(ref)
+
+
 T = TypeVar("T")
 class MPSharedState(Generic[T]):
     def __init__(self, initialValue: T = None) -> None:
