@@ -118,12 +118,17 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
         prev_log_speeds: bool = self.__prev_logging_settings[Settings.LOG_SPEEDS]
         prev_log_images: bool = self.__prev_logging_settings[Settings.LOG_IMAGES]
         prev_level_directory: Path|None = self.__prev_logging_settings[Settings.LEVEL_DIRECTORY]
+        prev_log_period: float = self.__prev_logging_settings[Settings.LOGGING_PERIOD]
+        prev_img_period: float = self.__prev_logging_settings[Settings.IMAGE_SAVE_PERIOD]
 
         try:
             self.__initial_directory = prev_level_directory.parent if prev_level_directory is not None else Path().absolute()
         except:
             self.__initial_directory = Path().absolute()
         
+        time_frame = ctk.CTkFrame(self,fg_color=self._fg_color)
+        time_frame.rowconfigure([0,1],weight=1,uniform="time_rows")
+        time_frame.columnconfigure([0],weight=1,uniform="time_columns")
         switch_frame = ctk.CTkFrame(self,fg_color=self._fg_color)
         switch_frame.rowconfigure([0,1,2],weight=1,uniform="switch_rows")
         directory_frame = ctk.CTkFrame(self,fg_color=self._fg_color)
@@ -159,13 +164,41 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
                                          command = self.__select_from_explorer)
         directory_button.grid(row=1,column=1,padx=10,pady=5,sticky="ne")
 
+        self.__data_period_var = _make_and_grid(
+            _make_entry,
+            time_frame,
+            "Data Logging Period",
+            Settings.LOGGING_PERIOD,
+            prev_log_period,
+            0,
+            map_fun=float,
+            entry_validator=_validate_time_float,
+            units="s",
+        )
+        self.__img_period_var = _make_and_grid(
+            _make_entry,
+            time_frame,
+            "Image Logging Period",
+            Settings.IMAGE_SAVE_PERIOD,
+            prev_img_period,
+            1,
+            map_fun=float,
+            entry_validator=_validate_time_float,
+            units="s",
+        )
+
+
+
+
+
         self.columnconfigure([0],weight = 1, uniform = "col")
         directory_frame.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
         switch_frame.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
+        time_frame.grid(row=0,column=2,padx=5,pady=5,sticky="nsew")
 
         confirm_button = ctk.CTkButton(self, corner_radius= ApplicationTheme.BUTTON_CORNER_RADIUS, text = "Confirm", command = self.__confirm_settings)
         cancel_button = ctk.CTkButton(self,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,text = "Cancel",command = self.destroy)
-        confirm_button.grid(row=1,column=1,padx=5,pady=5,sticky="e")
+        confirm_button.grid(row=1,column=2,padx=5,pady=5,sticky="e")
         cancel_button.grid(row=1,column=0,padx=5,pady=5,sticky="w")
         
     def __select_from_explorer(self):
@@ -189,13 +222,14 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
             Settings.LOG_PID: cast_s2b(self.__pid_var.get()),
             Settings.LOG_SPEEDS: cast_s2b(self.__speed_var.get()),
             Settings.LOG_IMAGES: cast_s2b(self.__image_var.get()),
+            Settings.LOGGING_PERIOD: self.__data_period_var.get_mapped(),
+            Settings.IMAGE_SAVE_PERIOD: self.__img_period_var.get_mapped(),
             Settings.LEVEL_DIRECTORY: (new_logging_directory / "levels"),
             Settings.PID_DIRECTORY: (new_logging_directory / "duties"),
             Settings.SPEED_DIRECTORY: (new_logging_directory / "speeds"),
             Settings.IMAGE_DIRECTORY: (new_logging_directory / "images"),
         }
 
-    
         modifications = modify_settings(new_logging_settings)
         ## close the window by notifying of modified changes
         self.destroy_successfully(modifications)
@@ -214,22 +248,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
 
         pid_settings = read_settings(*PID_SETTINGS)
         pump_settings: dict[Settings,PumpNames|None] = {key:pid_settings[key] for key in PID_PUMPS}
-        # an_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_PUMP]))
-        # cath_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_PUMP]))
-        # an_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.ANOLYTE_REFILL_PUMP]))
-        # cath_re_var = ctk.StringVar(value=_json2str(pump_settings[Settings.CATHOLYTE_REFILL_PUMP]))
-        # self.__vars = [an_var,cath_var,an_re_var,cath_re_var]
 
-        # self.columnconfigure([0,1],weight=1)
-        # self.rowconfigure([0,1],weight=1)
-        # pump_frame = ctk.CTkFrame(self)
-        # pump_lbl = ctk.CTkLabel(pump_frame,text="Pump Assignments")
-        # pump_lbl.grid(row=0,column=0,columnspan=2,padx=10,pady=5,sticky="nsew")
-        # control_frame = ctk.CTkFrame(self)
-        # control_lbl = ctk.CTkLabel(control_frame,text="Control Parameters")
-        # control_lbl.grid(row=0,column=1,columnspan=2,padx=10,pady=5,sticky="nsew")
-        # pump_frame.grid(row=0,column=0,padx=10,pady=5,sticky="nsew")
-        # control_frame.grid(row=0,column=1,padx=10,pady=5,sticky="nsew")
 
         frame_list = self.generate_layout("Pump Assignments","Control Parameters",confirm_command=self.__confirm_selections)
         pump_frame = frame_list[0]
@@ -278,20 +297,6 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
             var.trace_add("write",lambda *args,index=i: self.__update_selections(index,*args))
         self.pump_group.show()
 
-        # anolyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_var)
-        # catholyte_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_var)
-        # anolyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=an_re_var)
-        # catholyte_refill_selection = ctk.CTkOptionMenu(self,values=self.__default_options,variable=cath_re_var)
-        # self.__boxes = [anolyte_selection,catholyte_selection,anolyte_refill_selection,catholyte_refill_selection]
-
-        # an_label = ctk.CTkLabel(self,text="Anolyte Pump")
-        # cath_label = ctk.CTkLabel(self,text="Catholyte Pump")
-        # an_refill_label = ctk.CTkLabel(self,text="Anolyte Refill Pump")
-        # cath_refill_label = ctk.CTkLabel(self,text="Catholyte Refill Pump")
-        # labels = [an_label,cath_label,an_refill_label,cath_refill_label]
-
-            # self.__boxes[i].grid(row=i,column=1,padx=10,pady=5,sticky="nsew")
-            # labels[i].grid(row=i,column=0,padx=10,pady=5,sticky="nsew")
         self.control_group = _WidgetGroup(initial_row=0)
         base_duty_var = _make_and_group(_make_entry,
                                         control_frame,
@@ -377,55 +382,6 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                  on_return = self.__confirm_selections)
         
         self.control_group.show()
-        
-
-
-        # base_duty_label = ctk.CTkLabel(self,text="Equilibrium Control Duty")
-        # rf_time_label = ctk.CTkLabel(self,text="Refill Time")
-        # rf_duty_label = ctk.CTkLabel(self,text="Refill Duty")
-        # rf_percent_label = ctk.CTkLabel(self,text="Refill Solvent Loss Trigger")
-
-        # entry_labels = [base_duty_label,rf_time_label,rf_duty_label,rf_percent_label]
-
-        # base_duty_frame = ctk.CTkFrame(self,corner_radius=0)
-        # self.__base_duty_var = ctk.StringVar(value=pid_settings[Settings.BASE_CONTROL_DUTY])
-        # base_duty_box = ctk.CTkEntry(base_duty_frame, textvariable=self.__base_duty_var, validate='key', validatecommand = (self.register(_validate_duty),"%P"))
-        # base_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-
-        # rf_time_frame = ctk.CTkFrame(self,corner_radius=0)
-        # self.__rf_time_var = ctk.StringVar(value=pid_settings[Settings.REFILL_TIME])
-        # rf_time_box = ctk.CTkEntry(rf_time_frame, textvariable=self.__rf_time_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
-        # seconds_label = ctk.CTkLabel(rf_time_frame,text="s")
-        # rf_time_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-        # seconds_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
-
-        # rf_duty_frame = ctk.CTkFrame(self,corner_radius=0)
-        # self.__rf_duty_var = ctk.StringVar(value=pid_settings[Settings.REFILL_DUTY])
-        # rf_duty_box = ctk.CTkEntry(rf_duty_frame, textvariable=self.__rf_duty_var, validate='key', validatecommand = (self.register(_validate_time),"%P"))
-        # rf_duty_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-
-        # rf_percent_frame = ctk.CTkFrame(self,corner_radius=0)
-        # self.__rf_percent_var = ctk.StringVar(value=pid_settings[Settings.REFILL_PERCENTAGE_TRIGGER])
-        # rf_percent_box = ctk.CTkEntry(rf_percent_frame, textvariable=self.__rf_percent_var ,validate='key', validatecommand = (self.register(_validate_percent),"%P"))
-        # percent_label = ctk.CTkLabel(rf_percent_frame,text="%")
-        # rf_percent_box.grid(row=0,column=0,padx=5,pady=5,sticky="nsew")
-        # percent_label.grid(row=0,column=1,padx=5,pady=5,sticky="nsew")
-        # self.__refill_entries = [rf_time_box,rf_duty_box,rf_percent_box]
-        # entry_frames = [base_duty_frame,rf_time_frame,rf_duty_frame,rf_percent_frame]
-
-        # currRow = len(self.__vars)
-
-        # for j in range(0,len(entry_frames)):
-        #     entry_labels[j].grid(row=j+currRow,column=0,padx=10,pady=5,sticky="nsew")
-        #     entry_frames[j].grid(row=j+currRow,column=1,padx=5,pady=0,sticky="nsew")
-
-        # currRow = currRow + len(entry_frames)
-        
-        # currRow = max(self.control_group.current_row,self.pump_group.current_row)
-        # confirm_button = ctk.CTkButton(self,command=self.__confirm_selections,text="Confirm",corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
-        # confirm_button.grid(row=currRow,column=1,padx=10,pady=5,sticky="nes")
-        # cancel_button = ctk.CTkButton(self,command=self.destroy,text="Cancel",corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS)
-        # cancel_button.grid(row=currRow,column=0,padx=10,pady=5,sticky="new")
         
 
     def __update_selections(self,var_index,*args):
@@ -520,7 +476,7 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         
         # set up initial page
         instructions_label = ctk.CTkLabel(self.initial_frame,
-                                          text = """Finish the selection process by pressing ESC!\nSelect a region and then press SPACE or ENTER\nCancel the selection process by pressing c""")
+                                          text = """Follow the prompts in the text on the image!\nPress ESC to cancel at any time\n""")
         self.lblvar = ctk.StringVar(value="Select the anolyte tank, catholyte tank, and finally a reference height")
         self.msg_lbl = ctk.CTkLabel(self.initial_frame, textvariable = self.lblvar)
 
@@ -622,7 +578,7 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
 class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
 
-    __NUM_CAMERA_SETTINGS = 3
+    __NUM_CAMERA_SETTINGS = 2
     ALERT_TITLE = "Level Sensing Settings"
 
     def __init__(self, master: ctk.CTk, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
@@ -645,7 +601,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         cv_frame = segment_frames[1]
         
         self.rescale_var = _make_and_grid(_make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,1,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
-        self.save_period_var = _make_and_grid(_make_entry, camera_frame, "Period Between Image Saves", Settings.IMAGE_SAVE_PERIOD, prev_period, 2, map_fun=float, entry_validator = _validate_time_float, on_return = self.__confirm_selections, units="s")
+        # self.save_period_var = _make_and_grid(_make_entry, camera_frame, "Period Between Image Saves", Settings.IMAGE_SAVE_PERIOD, prev_period, 2, map_fun=float, entry_validator = _validate_time_float, on_return = self.__confirm_selections, units="s")
         self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,3,values=Capture.SUPPORTED_INTERFACES)
         self.interface_var.trace_add(self.__interface_changed)
 
@@ -653,7 +609,8 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         self.average_var = _make_and_grid(_make_entry,cv_frame,"Moving Average Period",Settings.AVERAGE_WINDOW_WIDTH, str(prev_average_period),2,entry_validator = _validate_time_float,units = "s",map_fun=float,on_return=self.__confirm_selections)
         self.stabilisation_var = _make_and_grid(_make_entry,cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD, str(prev_stabilisation_period),3,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
 
-        self.permanent_vars = [self.rescale_var,self.save_period_var,self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
+        # add self.save_period_var back
+        self.permanent_vars = [self.rescale_var,self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
         
         #----------CV2 Settings-------------
         self.cv2_widget_group = _WidgetGroup(initial_row=self.__NUM_CAMERA_SETTINGS)
@@ -974,9 +931,7 @@ class LevelDisplay(AlertBox[None]):
     def _destroy_quietly(self):
         self.teardown_window()
         return super()._destroy_quietly()
-        
-        
-        
+ 
 
 T = TypeVar("T")
 class _SettingVariable(Generic[T]):
@@ -1096,7 +1051,7 @@ def _make_and_grid(maker_function: _MakerFunction,
                    **kwargs) -> "_SettingVariable":
     lbl,var,widgetframe = maker_function(frame,name,setting,initial_value,map_fun=map_fun,**kwargs)
     lbl.grid(row=grid_row,column=0,padx=10,pady=5,sticky="nsew")
-    widgetframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="nsew")
+    widgetframe.grid(row=grid_row,column=1,padx=10,pady=5,sticky="ew")
     return var
 
 def _make_and_group(maker_function: _MakerFunction,
