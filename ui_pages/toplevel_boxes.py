@@ -14,7 +14,6 @@ from .ui_widgets.themes import ApplicationTheme
 import threading
 import copy
 import numpy as np
-import pandas as pd
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
@@ -597,7 +596,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         prev_stabilisation_period = all_settings[Settings.LEVEL_STABILISATION_PERIOD]
         prev_backend: CaptureBackend = all_settings[Settings.CAMERA_BACKEND]
         prev_rescale_factor: float = all_settings[Settings.IMAGE_RESCALE_FACTOR]
-        prev_period: float = all_settings[Settings.IMAGE_SAVE_PERIOD]
+        # prev_period: float = all_settings[Settings.IMAGE_SAVE_PERIOD]
 
         segment_frames = self.generate_layout("Camera Settings","Computer Vision Settings",confirm_command=self.__confirm_selections)
         camera_frame = segment_frames[0]
@@ -885,6 +884,7 @@ class LevelDisplay(AlertBox[None]):
             # add buffer to main data
             if len(self.input_buffer)>=self.BUFFER_SIZE or len(self.prev_values)<self.BUFFER_SIZE:
                 self.prev_values = [*self.prev_values,*self.input_buffer]
+                self.input_buffer.clear()
                 self.update_graph = True
 
             # aggregate main data if it gets too long
@@ -916,8 +916,17 @@ class LevelDisplay(AlertBox[None]):
 
     def __place_graph(self):
         self.ax.clear()
-        df = pd.DataFrame(self.prev_values,columns=["Elapsed Time (s)","Anolyte","Catholyte","Difference","Total"])
-        df.plot(x="Elapsed Time (s)",y=["Anolyte","Catholyte","Difference","Total"],ax=self.ax,legend=True)
+        data = np.array(self.prev_values)
+        times = data[:,0]
+        anolyte = data[:,1]
+        catholyte = data[:,2]
+        diff = data[:,3]
+        total = data[:,4]
+        self.ax.plot(times,anolyte,label="Anolyte")
+        self.ax.plot(times,catholyte,label="Catholyte")
+        self.ax.plot(times,diff,label="Difference")
+        self.ax.plot(times,total,label="Total")
+        self.ax.legend()
         self.canvas.draw()
 
     def __mode_change(self,*args):
