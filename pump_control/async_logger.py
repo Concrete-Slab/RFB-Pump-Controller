@@ -153,7 +153,8 @@ class DataLogger(Generator[None]):
             self._save_one(t,_DataType.LEVELS,lvl_data.levels)
             self._maybe_save_image(lvl_data.original_image)
 
-        wait_time = time.time() - perftimer
+        log_time = time.time() - perftimer
+        wait_time = self.period-log_time
         await asyncio.sleep(wait_time)
     
     def _save_one(self,elapsed_seconds: float, dtype: _DataType ,data:Iterable[Any]|None):
