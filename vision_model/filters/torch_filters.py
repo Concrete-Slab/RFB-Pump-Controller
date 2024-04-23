@@ -71,7 +71,7 @@ def _median_box(mask: np.ndarray,fmt="coco") -> tuple[int,int,int,int]:
         column = np.mean(column,axis=1)
         column = (column>0).astype(np.uint16)
         npixels[i] = np.sum(column)
-    height = int(np.median(npixels))
+    height = int(np.median(npixels)) if ncols>0 else 0
 
     bbox_out = (bbox[0], bbox[1]+bbox[3]-height, bbox[2], height)
     return bbox_out
