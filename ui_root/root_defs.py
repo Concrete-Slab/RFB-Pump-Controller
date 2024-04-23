@@ -29,6 +29,7 @@ class UIRoot(ctk.CTk):
         self.__states: Dict[SharedState[Any],list[tuple[StateFunction[Any],bool]]] = {}
         self.__events: Dict[threading.Event, list[tuple[EventFunction,bool]]] = {}
         self.__pages: Dict[str, PageFunction] = {}
+        self._alert_boxes = []
         self.__current_frame: ctk.CTkFrame = None
         self.__poll()
 
@@ -123,6 +124,11 @@ class UIRoot(ctk.CTk):
         except KeyError:
             raise UIError(f"Page \"{key}\" does not exist")
         # TODO catch other errors
+
+    def destroy(self):
+        for box in self._alert_boxes:
+            box._destroy_quietly()
+        super().destroy()
 
 
 class UIError(KeyError):

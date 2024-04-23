@@ -1,15 +1,19 @@
 import customtkinter as ctk
 from PIL import Image
+import cv2
 from support_classes.settings_interface import read_setting
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
 from support_classes import read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture, CAMERA_SETTINGS
 from cv2_gui.cv2_multiprocessing import InputProcess
 # #TODO make independent of model class
+from pump_control.async_levelsensor import LevelReading, LevelOutput
 from typing import Generic,ParamSpec,Callable,Any,TypeVar, Protocol
 from pathlib import Path
 from .ui_widgets.themes import ApplicationTheme
 import threading
 import copy
+import numpy as np
+from PIL import Image
 
 SuccessSignature = ParamSpec("SuccessSignature")
 
@@ -20,17 +24,24 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
         self.__on_failure = on_failure
         self.__on_success = on_success
         self.__event_listeners: dict[str, list[Callable[...,None]]] = {}
-        # bring alert box to fromt
+        # register alert box with the root
+        self.__root._alert_boxes.append(self)
+        # bring alert box to front
         self.bring_forward()
-    
+
     def destroy_successfully(self,*args: SuccessSignature.args, **kwargs: SuccessSignature.kwargs) -> None:
+        self._destroy_quietly()
         if self.__on_success is not None:
             self.__on_success(*args,**kwargs)
-        super().destroy()
 
     def destroy(self) -> None:
+        self._destroy_quietly()
         if self.__on_failure is not None:
             self.__on_failure()
+
+    def _destroy_quietly(self):
+        if self in self.__root._alert_boxes:
+            self.__root._alert_boxes.remove(self)
         super().destroy()
 
     def add_listener(self,event: str, callback: Callable[...,None]) -> Callable[[None],None]:
@@ -902,6 +913,71 @@ class _WidgetGroup:
             vars_out = [*vars_out,*childvars]
         return vars_out
 
+class LevelDisplay(AlertBox[None]):
+    def __init__(self, master: UIRoot, level_state: SharedState[tuple[LevelReading|None,np.ndarray]], *args, on_success: Callable[[None], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
+        super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
+        self.teardown_window = master.register_state(level_state,self.__update_display)
+        
+        self.info_frame = ctk.CTkFrame(self)
+
+        self._initial_image_array = np.zeros((720,720,3),dtype=np.uint8)
+        initial_image = ctk.CTkImage(Image.fromarray(self._initial_image_array),size=self._initial_image_array.shape[:-1][::-1])
+        self.img_box = ctk.CTkLabel(self.info_frame,image=initial_image,text="")
+
+
+        self.mode_var = ctk.StringVar(self,value="Image")
+        self.mode_switcher = ctk.CTkSegmentedButton(self,values=["Image","Graph"],variable=self.mode_var,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,)
+        self.mode_var.trace_add("write",self.__mode_change)
+        self.mode_switcher.grid(row=1,column=0,padx=10,pady=10,sticky="ns")
+        self.info_frame.grid(row=0,column=0,padx=10,pady=10,sticky="nsew")
+        self._prev_state = None
+        self.__mode_change()
+    
+    def __update_display(self,new_state: LevelOutput|None):
+        if new_state is None:
+            return
+        mode = self.mode_var.get()
+        if new_state is not None and new_state.levels is not None:
+            if mode == "Image":
+                self.__place_image(new_state.levels, new_state.filtered_image)
+            elif mode == "Graph":
+                self.__place_graph(new_state.levels)
+        else:
+            if mode == "Image":
+                self.__place_image([0,0,0,0],self._initial_image_array)
+        self._prev_state = new_state
+
+    def __place_image(self, new_levels: LevelReading, new_image: np.ndarray):
+        # write information text
+        cv2.putText(new_image, f'Electrolyte Loss: {0-new_levels[3]} mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(new_image, f'Anolyte: {new_levels[0]} mL', (10,80), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(new_image, f'Catholyte: {new_levels[1]}mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(new_image, f'Diff: {new_levels[2]} mL', (10,140), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        ctkimg = ctk.CTkImage(Image.fromarray(new_image),size=new_image.shape[:-1][::-1])
+        self.img_box.configure(image=ctkimg)
+        
+    def __place_graph(self, new_reading: LevelReading):
+        pass
+        
+    def __mode_change(self,*args):
+        new_mode = self.mode_var.get()
+        if new_mode == "Image":
+            self.img_box.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
+        else:
+            self.img_box.grid_forget()
+        self.__update_display(self._prev_state)
+        
+    def _destroy_quietly(self):
+        self.teardown_window()
+        return super()._destroy_quietly()
+        
+        
+        
+
 T = TypeVar("T")
 class _SettingVariable(Generic[T]):
     def __init__(self,var: ctk.StringVar,setting: Settings,validator: Callable[[T],bool]|None = None, map_fun: Callable[[str],T]|None = None) -> None:
@@ -1038,7 +1114,6 @@ def _make_and_group(maker_function: _MakerFunction,
     group.add_var(var)
     group.nextrow()
     return var
-
 
 class _ValidatorFunction():
     def __call__(a: str,allow_true = True) -> bool: ...

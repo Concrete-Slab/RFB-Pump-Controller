@@ -2,7 +2,7 @@ from typing import Any, Iterable
 import numpy as np
 from simple_pid import PID
 from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
-from .async_levelsensor import LevelReading
+from .async_levelsensor import LevelReading, LevelOutput
 from serial_interface import GenericInterface
 import asyncio
 from support_classes import Generator,SharedState, DEFAULT_SETTINGS, Settings, PumpNames
@@ -19,7 +19,7 @@ class PIDRunner(Generator[Duties]):
 
 
     def __init__(self, 
-                 level_state: SharedState[tuple[LevelReading,np.ndarray|None]], 
+                 level_state: SharedState[LevelOutput], 
                  serial_interface: GenericInterface, level_event: asyncio.Event, 
                  base_duty: int = DEFAULT_SETTINGS[Settings.BASE_CONTROL_DUTY], 
                  refill_time: int = DEFAULT_SETTINGS[Settings.REFILL_TIME],
@@ -108,8 +108,8 @@ class PIDRunner(Generator[Duties]):
         if level_state is not None:
             # There is new data! Read it from the level generator queue
 
-            # level state is a tuple; the first item contains the LevelReading entry
-            last_readings = level_state[0]
+            # level state is a dataclass; the "levels" item contains the LevelReading entry
+            last_readings = level_state.levels
 
             # the LevelReading tuple is as follows:
             # (elapsed time, anolyte volume, catholyte volume, anolyte-catholyte, anolyte+catholyte-initial)

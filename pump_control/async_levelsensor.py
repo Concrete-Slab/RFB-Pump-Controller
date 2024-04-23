@@ -11,13 +11,20 @@ import time
 from pathlib import Path
 import numpy as np
 import copy
+from dataclasses import dataclass
 
 #TODO change this to typing.Sequence[int] if error
 Rect = tuple[int,int,int,int]
 
 LevelReading = tuple[float,float,float,float]
 
-class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
+@dataclass
+class LevelOutput:
+    levels: LevelReading|None
+    original_image: np.ndarray
+    filtered_image: np.ndarray
+
+class LevelSensor(Generator[LevelOutput]):
 
 
     def __init__(self, 
@@ -67,8 +74,7 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
 
     def set_parameters(self,new_parameters: dict[Settings,Any],capture_device: Capture|None = None):
         if capture_device is not None:
-            if self._vc:
-                self._vc.close()
+            self.stop()
             self._vc = capture_device
         if Settings.SENSING_PERIOD in new_parameters.keys():
             self.__sense_period = new_parameters[Settings.SENSING_PERIOD]
@@ -103,7 +109,7 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
         self._filter.setup()
         # set an initial sleep time. this is recalculated at each iteration of the loop
         self.__sleep_time = 0.5
-        self.__cv2_process.start()
+        # self.__cv2_process.start()
 
     async def _loop(self) -> tuple[LevelReading|None,np.ndarray]|None:
 
@@ -153,18 +159,9 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
         # place the filtered images onto the original image
         frame[self.__indexAn[0],self.__indexAn[1],:] = frame_an
         frame[self.__indexCath[0],self.__indexCath[1],:] = frame_cath
-        # write information text
-        cv2.putText(frame, f'Electrolyte Loss: {0-avg_change} mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Anolyte: {avg_an} mL', (10,80), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Catholyte: {avg_cath}cmL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
-        cv2.putText(frame, f'Diff: {avg_diff} mL', (10,140), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (0, 0, 255), 2, cv2.LINE_AA)
 
         # send to display thread
-        self.__cv2_process.input.set_value(frame)
+        # self.__cv2_process.input.set_value(frame)
 
         #--------------UPDATE---------------
         # update the logging state
@@ -179,15 +176,17 @@ class LevelSensor(Generator[tuple[LevelReading|None,np.ndarray]]):
         data = [avg_an, avg_cath, avg_diff,avg_change]
 
         # save the data to exposed state
-        self.state.set_value((data,unaltered_frame))
+        new_state = LevelOutput(data,unaltered_frame,frame)
+        self.state.set_value(new_state)
         # additional asyncio event set for pid await line
         self.sensed_event.set()
+        return None
 
     def teardown(self):
         if self._vc is not None:
             self._vc.close()
-        self.__cv2_process.exit_flag.set()
-        self.__cv2_process.join()
+        # self.__cv2_process.exit_flag.set()
+        # self.__cv2_process.join()
         cv2.destroyAllWindows()
 
 def _get_indices(r: Rect):

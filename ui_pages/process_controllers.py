@@ -4,7 +4,7 @@ from pump_control import Pump
 from support_classes import PumpNames, Settings
 from enum import Enum
 from .PAGE_EVENTS import CEvents
-from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox,LevelSettingsBox
+from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox,LevelSettingsBox,LevelDisplay
 from typing import Any, Callable
 
 
@@ -125,13 +125,23 @@ class LevelProcess(BaseProcess):
             box = self._controller_context._create_alert(LevelSelect,on_success=on_success,on_failure=on_failure)
 
     def __send_level_config(self):
+        def on_close():
+            if self._pump_context is not None:
+                self._pump_context.stop_levels()
+        
+
+
         if self._pump_context and self._controller_context and self.level_data:
 
             (state_running,state_levels) = self._pump_context.start_levels(*self.level_data.as_tuple())
             
+            box = self._controller_context. _create_alert(LevelDisplay,state_levels,on_failure=on_close,on_success=on_close)
+            def on_levels_stopped(arg: ProcessName):
+                if self._pump_context is not None and arg == ProcessName.LEVEL:
+                    box.destroy()
             if len(self._removal_callbacks) == 0:
                 self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
-
+                self._removal_callbacks.append(self._controller_context.add_listener(CEvents.PROCESS_CLOSED,on_levels_stopped))
     def __handle_running(self,isrunning: bool):
         if self._controller_context:
             if isrunning:
@@ -160,12 +170,12 @@ class LevelProcess(BaseProcess):
 
 Rect = tuple[int,int,int,int]
 class _LevelData:
-    def __init__(self,r1: Rect, r2: Rect, h: Rect, ref_vol: float):
+    def __init__(self,r1: Rect, r2: Rect, h: float, ref_vol: float):
         self.r1 = r1
         self.r2 = r2
         self.h = h
         self.ref_vol = ref_vol
-    def as_tuple(self) -> tuple[Rect,Rect,Rect,float]:
+    def as_tuple(self) -> tuple[Rect,Rect,float,float]:
         return (self.r1,self.r2,self.h,self.ref_vol)
 
 class DataProcess(BaseProcess):

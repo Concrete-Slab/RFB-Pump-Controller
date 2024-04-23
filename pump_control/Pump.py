@@ -3,7 +3,7 @@ from serial_interface import GenericInterface, InterfaceException
 from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
 from concurrent.futures import Future
 from support_classes.camera_interface import Capture
-from .async_levelsensor import LevelSensor, LevelReading, Rect
+from .async_levelsensor import LevelSensor, LevelOutput, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
 from .async_logger import DataLogger
@@ -129,7 +129,7 @@ class Pump(AsyncRunner,Teardown):
     def levels_ready(self):
         return self.__level.is_ready()
 
-    def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[tuple[LevelReading,np.ndarray|None]]]:
+    def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[LevelOutput]]:
         try:
             self.__level.set_vision_parameters(rect1, rect2, rect_ref, vol_ref)
         except ValueError as e:

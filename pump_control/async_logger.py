@@ -1,6 +1,6 @@
 from typing import Any, Iterable
 from support_classes import SharedState, Settings, Generator, LOGGING_SETTINGS, DEFAULT_SETTINGS, PumpNames, GeneratorException
-from .async_levelsensor import LevelReading
+from .async_levelsensor import LevelOutput
 from .async_pidcontrol import Duties
 from .async_serialreader import SpeedReading
 import numpy as np
@@ -49,7 +49,7 @@ class DataLogger(Generator[None]):
             self, 
             speed_state: SharedState[SpeedReading],
             duty_state: SharedState[Duties],
-            level_state: SharedState[tuple[LevelReading|None,np.ndarray]],
+            level_state: SharedState[LevelOutput],
             img_dir: Path = DEFAULT_SETTINGS[Settings.IMAGE_DIRECTORY],
             spd_dir: Path = DEFAULT_SETTINGS[Settings.SPEED_DIRECTORY],
             dty_dir: Path = DEFAULT_SETTINGS[Settings.PID_DIRECTORY],
@@ -109,7 +109,7 @@ class DataLogger(Generator[None]):
         filename = ""
         match dtype:
             case _DataType.DUTIES:
-                filename = "duties_" +self.__base_filename
+                filename = "duties_"+self.__base_filename
             case _DataType.SPEEDS:
                 filename = "speeds_"+self.__base_filename
             case _DataType.LEVELS:
@@ -142,16 +142,16 @@ class DataLogger(Generator[None]):
         perftimer = time.time()
 
         duties = self.duty_state.force_value()
-        lvl_tuple = self.level_state.force_value()
+        lvl_data = self.level_state.force_value()
         speeds = self.speed_state.force_value()
         t = time.time()-self.__initial_timestamp
         
         self._save_one(t,_DataType.DUTIES,duties)
         self._save_one(t,_DataType.SPEEDS,speeds)
 
-        if lvl_tuple is not None:
-            self._save_one(t,_DataType.LEVELS,lvl_tuple[0])
-            self._maybe_save_image(lvl_tuple[1])
+        if lvl_data is not None:
+            self._save_one(t,_DataType.LEVELS,lvl_data.levels)
+            self._maybe_save_image(lvl_data.original_image)
 
         wait_time = time.time() - perftimer
         await asyncio.sleep(wait_time)
