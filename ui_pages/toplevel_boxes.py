@@ -1,3 +1,4 @@
+import time
 import customtkinter as ctk
 from PIL import Image
 import cv2
@@ -13,7 +14,9 @@ from .ui_widgets.themes import ApplicationTheme
 import threading
 import copy
 import numpy as np
-from PIL import Image
+import pandas as pd
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.figure import Figure
 
 SuccessSignature = ParamSpec("SuccessSignature")
 
@@ -799,6 +802,145 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
                 entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
                 var.widget.configure(border_color=entry_fgcolor)
 
+_TimedReading = tuple[float,float,float,float,float]
+def _mean_data(data: list[_TimedReading]) -> _TimedReading:
+    n = len(data)
+    if n<1:
+        return
+    out = [0.0,0.0,0.0,0.0,0.0]
+    for j in range(0,5):
+        meanval = 0
+        for k in range(0,n):
+            meanval += data[k][j]
+        meanval = meanval/n
+        out[j] = meanval
+    return tuple(out)
+
+class LevelDisplay(AlertBox[None]):
+
+    MIN_DISPLAY_DATA = 500
+    MAX_DISPLAY_DATA = 1000
+    BUFFER_SIZE = 10
+
+    def __init__(self, master: UIRoot, level_state: SharedState[tuple[LevelReading|None,np.ndarray]], *args, on_success: Callable[[None], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
+        super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
+        self.teardown_window = master.register_state(level_state,self.__update_display)
+        
+        self.initial_time = time.time()
+
+        self.info_frame = ctk.CTkFrame(self)
+
+        self._initial_image_array = np.zeros((720,720,3),dtype=np.uint8)
+        initial_image = ctk.CTkImage(Image.fromarray(self._initial_image_array),size=self._initial_image_array.shape[:-1][::-1])
+        self.img_box = ctk.CTkLabel(self.info_frame,image=initial_image,text="")
+
+        self.input_buffer: list[_TimedReading] = []
+        self.prev_values: list[_TimedReading] = []
+        self.update_graph = True
+
+
+        self.mode_var = ctk.StringVar(self,value="Image")
+        self.mode_switcher = ctk.CTkSegmentedButton(self,values=["Image","Graph"],variable=self.mode_var,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,)
+        self.mode_var.trace_add("write",self.__mode_change)
+        self.mode_switcher.grid(row=1,column=0,padx=10,pady=10,sticky="ns")
+        self.info_frame.grid(row=0,column=0,padx=10,pady=10,sticky="nsew")
+        self._prev_state = None
+
+        # graph objs
+        self.fig = Figure(figsize=(5,4),dpi=200)
+        self.ax = self.fig.add_subplot()
+        self.ax.set_xlabel("Elapsed Time (s)")
+        self.ax.set_ylabel("Level (mL)")
+        self.canvas = FigureCanvasTkAgg(figure=self.fig,master=self.info_frame)
+        self.graph_box = self.canvas.get_tk_widget()
+        self.__mode_change()
+
+    @staticmethod
+    def __aggregate_data(vals_in: list[_TimedReading]) -> list[_TimedReading]:
+        # aggregate data by windowing until minimum size is reached
+        # do this in place so that no memory is wasted
+        step = LevelDisplay.MAX_DISPLAY_DATA//LevelDisplay.MIN_DISPLAY_DATA
+        for i in range(0,LevelDisplay.MIN_DISPLAY_DATA):
+            lower_index = i*step
+            upper_index = lower_index + step
+            try:
+                curr_data = vals_in[lower_index:upper_index]
+                mean = _mean_data(curr_data)
+                vals_in[i] = mean
+            except IndexError:
+                break
+        return vals_in[:i]
+    
+    def __update_display(self,new_state: LevelOutput|None):
+        if new_state is None:
+            return
+    
+        mode = self.mode_var.get()
+        if new_state is not None and new_state.levels is not None:
+
+            # add value to buffer
+            timed_reading = (time.time()-self.initial_time,*new_state.levels)
+            self.input_buffer.append(timed_reading)
+
+            # add buffer to main data
+            if len(self.input_buffer)>=self.BUFFER_SIZE or len(self.prev_values)<self.BUFFER_SIZE:
+                self.prev_values = [*self.prev_values,*self.input_buffer]
+                self.update_graph = True
+
+            # aggregate main data if it gets too long
+            if len(self.prev_values)>self.MAX_DISPLAY_DATA:
+                self.prev_values = self.__aggregate_data(self.prev_values)
+
+            if mode == "Image":
+                self.__place_image(new_state.levels, new_state.filtered_image)
+            elif mode == "Graph" and self.update_graph:
+                self.__place_graph()
+                self.update_graph = False
+        else:
+            if mode == "Image":
+                self.__place_image([0,0,0,0],self._initial_image_array)
+        self._prev_state = new_state
+
+    def __place_image(self, new_levels: LevelReading, new_image: np.ndarray):
+        # write information text
+        cv2.putText(new_image, f'Electrolyte Loss: {0-new_levels[3]} mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(new_image, f'Anolyte: {new_levels[0]} mL', (10,80), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(new_image, f'Catholyte: {new_levels[1]}mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(new_image, f'Diff: {new_levels[2]} mL', (10,140), cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
+        ctkimg = ctk.CTkImage(Image.fromarray(new_image),size=new_image.shape[:-1][::-1])
+        self.img_box.configure(image=ctkimg)
+
+    def __place_graph(self):
+        self.ax.clear()
+        df = pd.DataFrame(self.prev_values,columns=["Elapsed Time (s)","Anolyte","Catholyte","Difference","Total"])
+        df.plot(x="Elapsed Time (s)",y=["Anolyte","Catholyte","Difference","Total"],ax=self.ax,legend=True)
+        self.canvas.draw()
+
+    def __mode_change(self,*args):
+        new_mode = self.mode_var.get()
+        grid_args = {
+            "row":0,
+            "column":0,
+            "padx":0,
+            "pady":0,
+            "sticky":"nsew"
+        }
+        if new_mode == "Image":
+            self.graph_box.grid_forget()
+            self.img_box.grid(**grid_args)
+        else:
+            self.img_box.grid_forget()
+            self.graph_box.grid(**grid_args)
+        self.__update_display(self._prev_state)
+
+    def _destroy_quietly(self):
+        self.teardown_window()
+        return super()._destroy_quietly()
+
 class _WidgetGroup:
     def __init__(self,initial_row = 0, widgets: list[ctk.CTkBaseClass] = [], rows: list[int] = [], columns: list[int] = [], vars: list["_SettingVariable"] = [],children: list["_WidgetGroup"]|None = [], parent: "_WidgetGroup" = None):
         max_index = min(len(widgets),len(rows),len(columns))
@@ -869,69 +1011,6 @@ class _WidgetGroup:
             childvars = child.get_vars()
             vars_out = [*vars_out,*childvars]
         return vars_out
-
-class LevelDisplay(AlertBox[None]):
-    def __init__(self, master: UIRoot, level_state: SharedState[tuple[LevelReading|None,np.ndarray]], *args, on_success: Callable[[None], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
-        super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
-        self.teardown_window = master.register_state(level_state,self.__update_display)
-        
-        self.info_frame = ctk.CTkFrame(self)
-
-        self._initial_image_array = np.zeros((720,720,3),dtype=np.uint8)
-        initial_image = ctk.CTkImage(Image.fromarray(self._initial_image_array),size=self._initial_image_array.shape[:-1][::-1])
-        self.img_box = ctk.CTkLabel(self.info_frame,image=initial_image,text="")
-
-
-        self.mode_var = ctk.StringVar(self,value="Image")
-        self.mode_switcher = ctk.CTkSegmentedButton(self,values=["Image","Graph"],variable=self.mode_var,corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,)
-        self.mode_var.trace_add("write",self.__mode_change)
-        self.mode_switcher.grid(row=1,column=0,padx=10,pady=10,sticky="ns")
-        self.info_frame.grid(row=0,column=0,padx=10,pady=10,sticky="nsew")
-        self._prev_state = None
-        self.__mode_change()
-    
-    def __update_display(self,new_state: LevelOutput|None):
-        if new_state is None:
-            return
-        mode = self.mode_var.get()
-        if new_state is not None and new_state.levels is not None:
-            if mode == "Image":
-                self.__place_image(new_state.levels, new_state.filtered_image)
-            elif mode == "Graph":
-                self.__place_graph(new_state.levels)
-        else:
-            if mode == "Image":
-                self.__place_image([0,0,0,0],self._initial_image_array)
-        self._prev_state = new_state
-
-    def __place_image(self, new_levels: LevelReading, new_image: np.ndarray):
-        # write information text
-        cv2.putText(new_image, f'Electrolyte Loss: {0-new_levels[3]} mL', (10,50), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
-        cv2.putText(new_image, f'Anolyte: {new_levels[0]} mL', (10,80), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
-        cv2.putText(new_image, f'Catholyte: {new_levels[1]}mL', (10,110), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
-        cv2.putText(new_image, f'Diff: {new_levels[2]} mL', (10,140), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.75, (255, 0, 0), 2, cv2.LINE_AA)
-        ctkimg = ctk.CTkImage(Image.fromarray(new_image),size=new_image.shape[:-1][::-1])
-        self.img_box.configure(image=ctkimg)
-        
-    def __place_graph(self, new_reading: LevelReading):
-        pass
-        
-    def __mode_change(self,*args):
-        new_mode = self.mode_var.get()
-        if new_mode == "Image":
-            self.img_box.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
-        else:
-            self.img_box.grid_forget()
-        self.__update_display(self._prev_state)
-        
-    def _destroy_quietly(self):
-        self.teardown_window()
-        return super()._destroy_quietly()
- 
 
 T = TypeVar("T")
 class _SettingVariable(Generic[T]):
