@@ -522,6 +522,8 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
                     errormsg = "Please select exactly 3 regions"
                 case InputProcess.ErrorCode.CAPTURE_ERROR:
                     errormsg = "Camera failed to take picture"
+                case InputProcess.ErrorCode.OVER_EDGE_SELECTION:
+                    errormsg = "Selections cross over edge of image"
                 case _:
                     errormsg = "Unknown Error"
             self.lblvar.set(errormsg)

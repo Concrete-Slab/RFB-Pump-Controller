@@ -32,7 +32,7 @@ class UIController:
         return alert
     
     # PUBLIC METHODS
-    def  add_listener(self,key,callback: Callable[[Any],None]|list[Callable[[Any],None]]) -> Callable[[], None]:
+    def add_listener(self,key,callback: Callable[[Any],None]|list[Callable[[Any],None]]) -> Callable[[], None]:
         if callback is list:
             try:
                 self.__event_listeners[key] = self.__event_listeners[key] + callback
@@ -45,7 +45,7 @@ class UIController:
             except KeyError:
                 self.__event_listeners[key] = [callback]
             return lambda: self.__unregister_single(key,callback)
-        
+
     def notify_event(self,key,*args,**kwargs) -> None:
         if key in self.__event_listeners.keys():
             for fun in self.__event_listeners[key]:

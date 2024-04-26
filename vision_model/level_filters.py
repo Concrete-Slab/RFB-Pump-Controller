@@ -5,13 +5,46 @@ import cv2
 from support_classes import ImageFilterType, Teardown
 from cv2_gui.mouse_events import MouseInput, BoxDrawer, ROISelector, HeightSelector
 
-class LevelFilter(Teardown,ABC):
+def _notify_setup(func):
+
+    def wrapper(self: LevelFilter,*args,**kwargs):
+        if not hasattr(self,"setup"):
+            self._setup_completed = False
+        result = func(self,*args,**kwargs)
+        if hasattr(self,"setup"):
+            self._setup_completed = True
+        return result
+    return wrapper
+
+def _maybe_call_filter(func):
+    def wrapper(self: LevelFilter,*args,**kwargs):
+        already_setup = getattr(self,"_setup_completed")
+        if not already_setup and hasattr(self,"setup"):
+            self.setup()
+        return func(self,*args,**kwargs)
+    return wrapper
+
+class LevelFilter(ABC):
 
     filter_size: tuple[int,int]|None = None
 
     def __init__(self,ignore_level=False) -> None:
         super().__init__()
         self.ignore_level = ignore_level
+        self._setup_completed = False
+
+    def __init_subclass__(cls,**kwargs) -> None:
+        super().__init_subclass__(**kwargs)
+        # register setup call logging
+        if "setup" in cls.__dict__:
+            cls.setup = _notify_setup(cls.setup)
+        # register callback to call setup before filtering if not done already
+        if "filter" in cls.__dict__:
+            cls.filter = _maybe_call_filter(cls.filter)
+    
+    def __call__(self,img: np.ndarray, scale: float) -> tuple[np.ndarray,float]:
+        return self.filter(img,scale)
+
     @abstractmethod
     def setup(self) -> None:
         """
@@ -56,7 +89,6 @@ class LevelFilter(Teardown,ABC):
 
     def teardown(self):
         pass
-
     @staticmethod
     def from_filter_type(ftype: ImageFilterType,ignore_level=False) -> "LevelFilter":
         match ftype:
@@ -73,6 +105,10 @@ class LevelFilter(Teardown,ABC):
     @classmethod    
     def _place_mask_on_image(cls,img: np.ndarray, mask: np.ndarray,color=(1,0,0), alpha = 0.25):
         assert len(img.shape) == 3 and img.shape[2] == 3
+        if len(mask.shape) == 2:
+            mask = mask[:,:,np.newaxis]
+        if mask.shape[2] == 1:
+            mask = np.repeat(mask,3,axis=2)
         assert len(mask.shape) == 3 and mask.shape == img.shape
         idx = mask>0
         blend = np.zeros_like(mask)
@@ -84,33 +120,6 @@ class LevelFilter(Teardown,ABC):
     @classmethod
     def _place_bbox_on_image(cls,img: np.ndarray, bbox: tuple[int,int,int,int]):
         return cv2.rectangle(img,bbox,(0,1,0),thickness=1)
-    
-    # https://stackoverflow.com/questions/63923800/drawing-bounding-rectangles-around-multiple-objects-in-binary-image-in-python
-    @classmethod
-    def _reduce_mask(cls,mask: np.ndarray, kernel_size=(10,10)):
-        # morph close to remove smaller blobs more efficiently
-        kernel = np.ones(kernel_size)
-        thresh = cv2.morphologyEx(mask,cv2.MORPH_CLOSE,kernel)
-        
-        contours = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = contours[0] if len(contours) == 2 else contours[1]
-        rects = [(0,0,0,0)]*len(contours)
-        areas = [0.0]*len(contours)
-        for i,cntr in enumerate(contours):
-            rect = cv2.boundingRect(cntr)
-            rect_area = rect[2]*rect[3]
-            rects[i] = rect
-            areas[i] = rect_area
-        
-        mask_out = np.zeros_like(thresh)
-        if len(areas)<1:
-            return mask_out
-        index = areas.index(max(areas))
-        bbox = rects[index]
-        row_slice = slice(bbox[1],bbox[1]+bbox[3])
-        col_slice = slice(bbox[0],bbox[0]+bbox[2])
-        mask_out[row_slice,col_slice] = thresh[row_slice,col_slice]
-        return mask_out
 
 
 class NoFilter(LevelFilter):

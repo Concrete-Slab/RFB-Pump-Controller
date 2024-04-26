@@ -1,9 +1,9 @@
 import torch
 from numpy import ndarray
-from ..segmentation_model import SegmentationModule
+from vision_model.segmentation_model import SegmentationModule
 import segmentation_models_pytorch as smp
-from ..level_filters import LevelFilter
-from ..Datasets.dataset import to_torch,normalise,get_bbox
+from vision_model.level_filters import LevelFilter
+from vision_model.Datasets.dataset import to_torch,normalise,get_bbox
 import numpy as np
 from pathlib import Path
 import copy
@@ -43,12 +43,6 @@ class _SegmentationFilter(LevelFilter):
         mask = np.transpose(mask,[1,2,0])
         img = np.transpose(img,[1,2,0])
         
-        mask = self._reduce_mask((mask.squeeze()*255).astype(np.uint8))
-
-        mask = np.repeat(mask[:,:,np.newaxis],3,axis=2)
-
-        #TODO change to get median height above base rather than max height above base
-
         if all(mask.flatten()<=0): # mask has no detections of fluid
             return img,0.0
         bbox = _median_box(mask,fmt="coco")
@@ -77,7 +71,7 @@ def _median_box(mask: np.ndarray,fmt="coco") -> tuple[int,int,int,int]:
     return bbox_out
 
 def LinkNetFilter(ignore_level=False):
-    return _SegmentationFilter(Path(__file__).parent/"linknet_320x320.ckpt",smp.Linknet(encoder_name="resnet50",encoder_weights=None),ignore_level=ignore_level)
+    return _SegmentationFilter(Path(__file__).parent/"linknet_320x320.ckpt",smp.Linknet(encoder_name="resnet101",encoder_weights=None),ignore_level=ignore_level)
     
 
         

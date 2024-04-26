@@ -5,6 +5,7 @@ from support_classes import SharedState
 import warnings
 import threading
 import copy
+import weakref
 
 POLL_REFRESH_TIME_MS = 500 # milliseconds between polls of the GUI thread
 
@@ -35,36 +36,41 @@ class UIRoot(ctk.CTk):
 
     def register_event(self, event: threading.Event, callback: EventFunction, single_call = False) -> CallbackRemover:
         new_tuple = (callback, single_call)
-        try:
+        if event in self.__events.keys():
             self.__events[event].append(new_tuple)
-        except KeyError:
-            self.__events = {**self.__events,
-                            event: [new_tuple]
-                            }
+        else:
+            self.__events = {
+                **self.__events,
+                event: [new_tuple]
+            }
+            
         def __unregister_single(ev = event, tp = new_tuple):
             try:
                 self.__events[ev].remove(tp)
                 if len(self.__events[ev]) == 0:
                     self.__events.pop(ev)
             except (IndexError,ValueError):
-                warnings.warn(str(ev.__hash__()) + " event has already been removed")
+                # warnings.warn(str(ev.__hash__()) + " event has already been removed")
+                pass
         return __unregister_single
 
     def register_state(self,state: SharedState[T], callback: StateFunction[T], single_call = False) -> CallbackRemover:
         new_tuple = (callback, single_call)
-        try:
+        if state in self.__states.keys():
             self.__states[state].append(new_tuple)
-        except:
-            self.__states = {**self.__states,
-                            state: [new_tuple]
-                            }
+        else:
+            self.__states = {
+                **self.__states,
+                state: new_tuple
+            }
         def __unregister_single(st = state, tp = new_tuple):
             try:
                 self.__states[st].remove(tp)
                 if len(self.__states[st]) == 0:
                     self.__states.pop(st)
             except (ValueError, IndexError,KeyError):
-                warnings.warn(str(st.__hash__()) + " queue has already been removed")
+                # warnings.warn(str(st.__hash__()) + " queue has already been removed")
+                pass
         return __unregister_single
 
     # KEY PART: modify the event loop of tkinter to perform polling and event callbacks before updating the UI

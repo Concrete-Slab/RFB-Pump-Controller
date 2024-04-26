@@ -34,6 +34,7 @@ class InputProcess(mp.Process):
         NONE = 0
         INCORRECT_SELECTION = 1
         CAPTURE_ERROR = 2
+        OVER_EDGE_SELECTION = 3
 
     def __init__(self, filter_type: ImageFilterType, capture_params: dict[Settings,Any], window_name: str = "Window"):
         super().__init__()
@@ -70,6 +71,10 @@ class InputProcess(mp.Process):
                 inp.break_event = self.exit_flag
             try:
                 outputs = MouseInput.chain_inputs(self.window,img,input_list,ignore_backwards=True)
+                if outside_image(img,outputs[0]) or outside_image(img,outputs[1]):
+                    self.error_data = self.ErrorCode.OVER_EDGE_SELECTION
+                    self.exit_flag.set()
+                    return
                 outputs = [*outputs[0],*outputs[1],outputs[2]]
                 outputs = list(map(int,outputs))
                 with self.output_data.get_lock():
@@ -87,6 +92,15 @@ class InputProcess(mp.Process):
         
 class InputException(Exception):
     pass
+
+
+def outside_image(img: np.ndarray, bbox: tuple[int,int,int,int]):
+    shp = img.shape[:-1]
+    if bbox[0]+bbox[2]>shp[1]:
+        return True
+    elif bbox[1]+bbox[3]>shp[0]:
+        return True
+    return False
 
             
 class ViewerProcess(threading.Thread):

@@ -1,4 +1,4 @@
-from ..level_filters import LevelFilter
+from vision_model.level_filters import LevelFilter
 import numpy as np
 import copy
 import cv2
