@@ -61,7 +61,7 @@ class UIRoot(ctk.CTk):
         else:
             self.__states = {
                 **self.__states,
-                state: new_tuple
+                state: [new_tuple]
             }
         def __unregister_single(st = state, tp = new_tuple):
             try:
