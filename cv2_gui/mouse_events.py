@@ -365,8 +365,8 @@ class ROISelector(MouseInput[tuple[int,int,int,int]]):
         if self.initial_point is None or self.final_point is None:
             raise MouseInputException("No rectangle available")
         width = abs(self.initial_point[0]-self.final_point[0])
-        height = abs(self.initial_point[1]-self.initial_point[0])
-        x_min = min(self.initial_point[1],self.final_point[1])
+        height = abs(self.initial_point[1]-self.final_point[1])
+        x_min = min(self.initial_point[0],self.final_point[0])
         y_min = min(self.initial_point[1],self.final_point[1])
         return (x_min,y_min,width,height)
 
