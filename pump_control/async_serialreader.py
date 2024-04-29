@@ -18,6 +18,9 @@ class SerialReader(Generator[SpeedReading|None]):
             # allows a timeout on buffer reading to be set
             new_line = await asyncio.wait_for(self.__serial_interface.readbuffer(),4)
             new_speeds = list(map(float,new_line.split(",")))
+            if len(new_speeds)<len(PumpNames):
+                additional_speeds = [0.0]*len(PumpNames)-len(new_speeds)
+                new_speeds = [*new_speeds,*additional_speeds]
             new_dict: SpeedReading = dict(zip(PumpNames,new_speeds))
             return new_dict
         except (TimeoutError,ValueError):
