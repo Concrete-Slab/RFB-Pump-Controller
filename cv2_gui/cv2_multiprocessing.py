@@ -72,7 +72,7 @@ class InputProcess(mp.Process):
             try:
                 outputs = MouseInput.chain_inputs(self.window,img,input_list,ignore_backwards=True)
                 if outside_image(img,outputs[0]) or outside_image(img,outputs[1]):
-                    self.error_data = self.ErrorCode.OVER_EDGE_SELECTION
+                    self.error_data.value = self.ErrorCode.OVER_EDGE_SELECTION.value
                     self.exit_flag.set()
                     return
                 outputs = [*outputs[0],*outputs[1],outputs[2]]
