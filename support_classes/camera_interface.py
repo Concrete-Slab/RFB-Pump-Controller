@@ -11,6 +11,7 @@ from pygame.surface import Surface
 from pygame.surfarray import array3d
 import pygame.camera as camera
 from pygame import _camera_opencv
+import pygame as pg
 from abc import ABC, abstractmethod
 from typing import Any, Callable
 import platform
@@ -278,7 +279,7 @@ class PygameCapture(Capture):
                 imshape = img.shape
                 img = cv2.resize(img,(int(imshape[1]*self._scale_factor),int(imshape[0]*self._scale_factor)))
             return img
-        except RuntimeError:
+        except (RuntimeError,pg.error):
             print("Failed to take image")
             raise CaptureException("Failed to take image")
         except Exception as e:

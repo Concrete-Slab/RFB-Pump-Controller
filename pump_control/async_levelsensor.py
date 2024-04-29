@@ -101,7 +101,7 @@ class LevelSensor(Generator[LevelOutput]):
     async def _setup(self):
         if any((self._vc is None, self.__indexAn is None, self.__indexCath is None, self.__scale is None)):
             raise GeneratorException("Null values supplied to level sensor parameters")
-        self.__cv2_process = cvmp.ViewerProcess(window_name="Level Visualisation")
+
         self._vc.open()
         self.__i = 0
         self.__vol_init = None
