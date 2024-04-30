@@ -161,7 +161,8 @@ class DataLogger(Generator[None]):
 
         log_time = time.time() - perftimer
         wait_time = self.period-log_time
-        await asyncio.sleep(wait_time)
+        # await asyncio.sleep(wait_time)
+        await self._wait_while_checking(wait_time,check_interval=0.5)
     
     def _save_one(self,elapsed_seconds: float, dtype: _DataType ,data:Iterable[Any]|None):
         if data is None:

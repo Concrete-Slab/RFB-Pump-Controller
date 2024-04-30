@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 import asyncio
 from .shared_state import SharedState
 from typing import TypeVar, Generic
+import time
 
 T = TypeVar("T")
 
@@ -38,6 +39,13 @@ class Generator(Generic[T],ABC):
             self.__flag.set()
             self.is_running.set_value(False)
             self.teardown()
+
+    async def _wait_while_checking(self,wait_duration: float, check_interval = 0.1):
+        t_start = time.time()
+        t = t_start
+        while t-t_start<wait_duration and not self.__flag.is_set():
+            await asyncio.sleep(check_interval)
+
 
     @abstractmethod
     def teardown(self):
