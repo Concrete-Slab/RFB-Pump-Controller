@@ -45,6 +45,7 @@ class Generator(Generic[T],ABC):
         t = t_start
         while t-t_start<wait_duration and not self.__flag.is_set():
             await asyncio.sleep(check_interval)
+            t = time.time()
 
 
     @abstractmethod
