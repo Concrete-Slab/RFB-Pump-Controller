@@ -12,12 +12,12 @@ class TimeAvg:
     def furthest_time(self) -> float|None:
         if len(self.stream)<1:
             return None
-        return self.stream[-1].time
+        return self.stream[0].time
     @property
     def latest_time(self) -> float|None:
         if len(self.stream)<1:
             return None
-        return self.stream[0].time
+        return self.stream[-1].time
     
     def append(self,data: list[float], timestamp: float):
         if not isinstance(data,list):
