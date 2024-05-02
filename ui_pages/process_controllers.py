@@ -1,4 +1,6 @@
 from abc import ABC,abstractmethod
+
+from support_classes.shared_state import SharedState
 from .UIController import UIController
 from pump_control import Pump
 from support_classes import PumpNames, Settings
@@ -96,6 +98,8 @@ class LevelProcess(BaseProcess):
     def __init__(self, controller_context: UIController | None = None, pump_context: Pump | None = None):
         super().__init__(controller_context, pump_context)
         self.level_data: _LevelData|None = None
+        self.display_box: LevelDisplay | None = None
+        self.display_state: SharedState|None = None
 
     @property
     def name(self) -> str:
@@ -125,27 +129,29 @@ class LevelProcess(BaseProcess):
             box = self._controller_context._create_alert(LevelSelect,on_success=on_success,on_failure=on_failure)
 
     def __send_level_config(self):
-        def on_close():
-            if self._pump_context is not None:
-                self._pump_context.stop_levels()
         
         if self._pump_context and self._controller_context and self.level_data:
 
             (state_running,state_levels) = self._pump_context.start_levels(*self.level_data.as_tuple())
-            display_state = state_levels.duplicate()
-            box = self._controller_context. _create_alert(LevelDisplay,display_state,on_failure=on_close,on_success=on_close)
-            def on_levels_stopped(arg: ProcessName):
-                if self._pump_context is not None and arg == ProcessName.LEVEL:
-                    box.destroy()
+            self.display_state = state_levels.duplicate()
+            
             if len(self._removal_callbacks) == 0:
                 self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
-                self._removal_callbacks.append(self._controller_context.add_listener(CEvents.PROCESS_CLOSED,on_levels_stopped))
+    
     def __handle_running(self,isrunning: bool):
         if self._controller_context:
-            if isrunning:
+            if isrunning and self.display_state:
                 self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.LEVEL)
+
+                def on_close():
+                    if self._pump_context is not None:
+                        self._pump_context.stop_levels()
+                
+                self.display_box = self._controller_context._create_alert(LevelDisplay,self.display_state,on_failure=on_close,on_success=on_close)
             else:
                 self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.LEVEL)
+                if self.display_box:
+                    self.display_box.destroy()
 
     def close(self):
         if self._pump_context:
