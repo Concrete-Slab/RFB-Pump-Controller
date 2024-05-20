@@ -114,7 +114,8 @@ class LevelSensor(Generator[LevelOutput]):
     async def _loop(self) -> tuple[LevelReading|None,np.ndarray]|None:
 
         # wait until next reading is due
-        await asyncio.sleep(self.__sleep_time)
+        # await asyncio.sleep(self.__sleep_time)
+        await self._wait_while_checking(self.__sleep_time,check_interval=0.5)
 
         # begin performance benchmarking
         start_time = time.perf_counter()

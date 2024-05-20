@@ -30,7 +30,12 @@ class UIRoot(ctk.CTk):
         self.__pages: Dict[str, PageFunction] = {}
         self._alert_boxes = []
         self.__current_frame: ctk.CTkFrame = None
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.__poll()
+
+    def _on_closing(self):
+        self.withdraw()
+        self.quit()
 
     def register_event(self, event: threading.Event, callback: EventFunction, single_call = False) -> CallbackRemover:
         new_tuple = (callback, single_call)
