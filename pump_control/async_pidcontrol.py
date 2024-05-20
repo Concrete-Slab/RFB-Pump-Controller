@@ -1,5 +1,4 @@
 from typing import Any, Iterable
-import numpy as np
 from simple_pid import PID
 from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from .async_levelsensor import LevelReading, LevelOutput

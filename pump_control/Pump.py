@@ -7,7 +7,6 @@ from .async_levelsensor import LevelSensor, LevelOutput, Rect
 from .async_pidcontrol import PIDRunner, Duties
 from .async_serialreader import SerialReader, SpeedReading
 from .async_logger import DataLogger
-import numpy as np
 from abc import ABC
 import copy
 
@@ -202,24 +201,6 @@ class Pump(AsyncRunner,Teardown):
         level_mods = {key:modifications[key] for key in modified_keys if key in LEVEL_SETTINGS}
         level_args = (level_mods,new_capture) if new_capture else (level_mods,)
         self.run_sync(self.__level.set_parameters,args = level_args)
-
-        #----------------- Data settings --------------------
-        # if Settings.LEVEL_DIRECTORY in modified_keys:
-        #     self.__level.set_dir(modifications[Settings.LEVEL_DIRECTORY])
-        # if Settings.PID_DIRECTORY in modified_keys:
-        #     self.__pid.set_dir(modifications[Settings.PID_DIRECTORY])
-        # if Settings.SPEED_DIRECTORY in modified_keys:
-        #     self.__poller.set_dir(modifications[Settings.SPEED_DIRECTORY])
-        
-        # if Settings.LOG_LEVELS in modified_keys:
-        #     self.__log_levels = modifications[Settings.LOG_LEVELS]
-        #     self.__level_logging_state.set_value(self.__log_levels and self.logging_state.force_value())
-        # if Settings.LOG_PID in modified_keys:
-        #     self.__log_pid = modifications[Settings.LOG_PID]
-        #     self.__pid_logging_state.set_value(self.__log_pid and self.logging_state.force_value())
-        # if Settings.LOG_SPEEDS in modified_keys:
-        #     self.__log_speeds = modifications[Settings.LOG_SPEEDS]
-        #     self.__polling_logging_state.set_value(self.__log_speeds and self.logging_state.force_value())
         if _contains_any(LOGGING_SETTINGS,modifications):
             logger_mods = {key:modifications[key] for key in modified_keys if key in LOGGING_SETTINGS}
             self.run_sync(self.__logger.set_parameters,args=(logger_mods,))

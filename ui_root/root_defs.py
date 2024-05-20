@@ -2,10 +2,8 @@ from typing import Tuple, TypeVar, Callable, Dict
 import customtkinter as ctk
 from typing import Callable,Any
 from support_classes import SharedState
-import warnings
 import threading
 import copy
-import weakref
 
 POLL_REFRESH_TIME_MS = 500 # milliseconds between polls of the GUI thread
 
@@ -61,7 +59,7 @@ class UIRoot(ctk.CTk):
         else:
             self.__states = {
                 **self.__states,
-                state: new_tuple
+                state: [new_tuple]
             }
         def __unregister_single(st = state, tp = new_tuple):
             try:

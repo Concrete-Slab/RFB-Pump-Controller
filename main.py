@@ -3,7 +3,7 @@ from support_classes.Teardown import with_teardown
 import sys
 
 @with_teardown
-def main():
+def run_application():
     if sys.gettrace():
         # run in debug mode
         app = App(debug=True)
@@ -12,4 +12,4 @@ def main():
     app.mainloop()
 
 if __name__ == '__main__':
-    main()
+    run_application()
