@@ -3,7 +3,7 @@ import subprocess
 import sys
 from setuptools.command.install import install
 
-def check_and_install_dependency(command, name, initialisation_command: list[str]|None = None, url:str|None = None):
+def check_and_install_external_dependency(command, name, initialisation_command: list[str]|None = None, url:str|None = None):
     """Check for the presence of an executable on the system path by calling --version"""
     try:
         subprocess.check_call([command, '--version'])
@@ -16,26 +16,40 @@ def check_and_install_dependency(command, name, initialisation_command: list[str
         print(strout)
         sys.exit(1)
 
+def install_package(pkg_name: str, opts:list[str]|str|None = None):
+    """Install a python package via pip command (with options e.g. -U)"""
+    if not opts:
+        opts = []
+    if isinstance(opts,list):
+        if len(opts)>0:
+            opts = " ".join(opts)
+        else:
+            opts = ""
+    if not isinstance(opts,str):
+        raise ValueError("opts must be a string or list of strings")
+    strarg = f"pip install {opts} -yes {pkg_name}"
+    subprocess.check_call(strarg)
+
 class DependencyInstallCommand(install):
     """Custom install command that checks for installation of git and git-lfs"""
     def run(self):
-        check_and_install_dependency("git","git")
-        check_and_install_dependency("git-lfs","git-LFS")
+        check_and_install_external_dependency("git","git",url="https://git-scm.com/downloads")
+        check_and_install_external_dependency("git-lfs","git-LFS",initialisation_command=["git-lfs","install"],url="https://git-lfs.com/")
+        # install albumentations without opencv-python-headless
+        install_package("albumentations",opts="-U")
         # proceed with installation as normal
         install.run(self)
 
-def parse_requirements(filename):
-    """Load requirements from requirements.txt"""
-    with open(filename, 'r') as f:
-        lines = f.readlines()
-    requirements = []
-    for line in lines:
-        # Skip comments and empty lines
-        if line.startswith('#') or not line.strip():
-            continue
-        # Add the requirement
-        requirements.append(line.strip())
-    return requirements
+def get_install_requires():
+    """Get the list of required packages, excluding albumentations and opencv-python-headless"""
+    from setuptools.command.egg_info import egg_info
+    from pkg_resources import parse_requirements
+
+    ei_cmd = egg_info()
+    ei_cmd.run()
+    with open(ei_cmd.egg_info + '/requires.txt') as f:
+        requires = [str(req) for req in parse_requirements(f) if req.name not in ("albumentations","opencv-python-headless")]
+    return requires
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -54,5 +68,8 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.11',
-    install_requires=parse_requirements("requirements.txt")
+    install_requires=get_install_requires(),
+    cmdclass={
+        'install': DependencyInstallCommand,
+    },
 )
