@@ -27,7 +27,7 @@ def install_package(pkg_name: str, opts:list[str]|str|None = None):
             opts = ""
     if not isinstance(opts,str):
         raise ValueError("opts must be a string or list of strings")
-    strarg = f"pip install {opts} -yes {pkg_name}"
+    strarg = f"pip install {opts} {pkg_name}"
     subprocess.check_call(strarg)
 
 class DependencyInstallCommand(install):
