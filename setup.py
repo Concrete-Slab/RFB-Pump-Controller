@@ -42,13 +42,9 @@ class DependencyInstallCommand(install):
 
 def get_install_requires():
     """Get the list of required packages, excluding albumentations and opencv-python-headless"""
-    from setuptools.command.egg_info import egg_info
     from pkg_resources import parse_requirements
-
-    ei_cmd = egg_info()
-    ei_cmd.run()
-    with open(ei_cmd.egg_info + '/requires.txt') as f:
-        requires = [str(req) for req in parse_requirements(f) if req.name not in ("albumentations","opencv-python-headless")]
+    with open("requirements.txt") as f:
+        requires = [str(req.name) for req in parse_requirements(f) if req.name not in ("albumentations","opencv-python-headless")]
     return requires
 
 with open("README.md", "r") as fh:
