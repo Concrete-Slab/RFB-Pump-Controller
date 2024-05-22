@@ -51,7 +51,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="RFB-pump-controller",
+    name="pip",
     version="0.1.0",
     author="Thomas Williams",
     author_email="thomaswilliams3982@gmail.com",
