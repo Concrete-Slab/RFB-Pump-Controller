@@ -68,4 +68,5 @@ setuptools.setup(
     cmdclass={
         'install': DependencyInstallCommand,
     },
+    py_modules=["main"]
 )
