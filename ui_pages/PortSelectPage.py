@@ -5,6 +5,7 @@ from PIL import Image
 from support_classes.settings_interface import Settings, read_settings
 from .UIController import UIController
 from .PAGE_EVENTS import PSEvents
+from .ui_widgets import ApplicationTheme
 import copy
 
 class PortSelectPage(ctk.CTkFrame):
@@ -150,6 +151,7 @@ class PortSelectPage(ctk.CTkFrame):
 
     def __on_error(self,error: BaseException):
         self.status.set(str(error))
+        self.status_label.configure(text_color=ApplicationTheme.ERROR_COLOR)
         self.confirm_button.configure(state="normal")
         self.UIController.notify_event(PSEvents.UPDATE_PORTS)
 
