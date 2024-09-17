@@ -311,17 +311,35 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                         entry_validator = _validate_duty,
                                         on_return = self.__confirm_selections
                                         )
-        rf_time_var = _make_and_group(_make_entry,
-                                        control_frame,
-                                        "Refill Time",
-                                        Settings.REFILL_TIME,
-                                        pid_settings[Settings.REFILL_TIME],
-                                        self.control_group,
-                                        map_fun=float,
-                                        units="s",
-                                        entry_validator = _validate_time_float,
-                                        on_return = self.__confirm_selections
-                                        )
+        kp_var = _make_and_group(_make_entry,
+                                 control_frame,
+                                 "Proportional Gain",
+                                 Settings.PROPORTIONAL_GAIN,
+                                 pid_settings[Settings.PROPORTIONAL_GAIN],
+                                 self.control_group,
+                                 map_fun=float,
+                                 entry_validator = _validate_gain,
+                                 on_return = self.__confirm_selections)
+        
+        ki_var = _make_and_group(_make_entry,
+                                 control_frame,
+                                 "Integral Gain",
+                                 Settings.INTEGRAL_GAIN,
+                                 pid_settings[Settings.INTEGRAL_GAIN],
+                                 self.control_group,
+                                 map_fun=float,
+                                 entry_validator = _validate_gain,
+                                 on_return = self.__confirm_selections)
+        
+        kd_var = _make_and_group(_make_entry,
+                                 control_frame,
+                                 "Derivative Gain",
+                                 Settings.DERIVATIVE_GAIN,
+                                 pid_settings[Settings.DERIVATIVE_GAIN],
+                                 self.control_group,
+                                 map_fun=float,
+                                 entry_validator = _validate_gain,
+                                 on_return = self.__confirm_selections)
         rf_duty_var = _make_and_group(_make_entry,
                                         control_frame,
                                         "Refill Duty",
@@ -354,37 +372,33 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                                         entry_validator = _validate_time_float,
                                         on_return = self.__confirm_selections
                                         )
-        kp_var = _make_and_group(_make_entry,
-                                 control_frame,
-                                 "Proportional Gain",
-                                 Settings.PROPORTIONAL_GAIN,
-                                 pid_settings[Settings.PROPORTIONAL_GAIN],
-                                 self.control_group,
-                                 map_fun=float,
-                                 entry_validator = _validate_gain,
-                                 on_return = self.__confirm_selections)
         
-        ki_var = _make_and_group(_make_entry,
-                                 control_frame,
-                                 "Integral Gain",
-                                 Settings.INTEGRAL_GAIN,
-                                 pid_settings[Settings.INTEGRAL_GAIN],
-                                 self.control_group,
-                                 map_fun=float,
-                                 entry_validator = _validate_gain,
-                                 on_return = self.__confirm_selections)
+        self.time_cutoff_group = _WidgetGroup(initial_row=10,parent=self.control_group)
+        rf_time_var = _make_and_group(_make_entry,
+                                        control_frame,
+                                        "Refill Time",
+                                        Settings.REFILL_TIME,
+                                        pid_settings[Settings.REFILL_TIME],
+                                        self.time_cutoff_group,
+                                        map_fun=float,
+                                        units="s",
+                                        entry_validator = _validate_time_float,
+                                        on_return = self.__confirm_selections
+                                        )
         
-        kd_var = _make_and_group(_make_entry,
-                                 control_frame,
-                                 "Derivative Gain",
-                                 Settings.DERIVATIVE_GAIN,
-                                 pid_settings[Settings.DERIVATIVE_GAIN],
-                                 self.control_group,
-                                 map_fun=float,
-                                 entry_validator = _validate_gain,
-                                 on_return = self.__confirm_selections)
+        self.__rf_stop_method_var = _make_and_group(_make_segmented_button,
+                                        control_frame,
+                                        "Cutoff Method",
+                                        Settings.REFILL_STOP_ON_FULL,
+                                        "Stop when full" if pid_settings[Settings.REFILL_STOP_ON_FULL] else "Stop after time",
+                                        self.control_group,
+                                        lambda str_in: str_in == "Stop when full",
+                                        values = ["Stop when full","Stop after time"],
+                                        command = self.__hide_show_time_cutoff
+                                        )
         
         self.control_group.show()
+        self.__hide_show_time_cutoff()
         
 
     def __update_selections(self,var_index,*args):
@@ -396,6 +410,12 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                 value = var.get()
                 if value == selected_value:
                     var.set("None")
+
+    def __hide_show_time_cutoff(self,*args,**kwargs):
+        if self.__rf_stop_method_var.get_mapped():
+            self.time_cutoff_group.hide()
+        else:
+            self.time_cutoff_group.show()
 
         
     def __confirm_selections(self):
@@ -721,7 +741,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
             self.pygame_vd_var.widget.set("Loading")
             new_cameras = PygameCapture.get_cameras(backend=selected_backend)
             self.pygame_vd_var.widget.configure(values=new_cameras)
-            if selected_camera not in new_cameras:
+            if selected_camera not in new_cameras and self.pygame_vd_var.widget:
                 self.pygame_vd_var.widget.set(new_cameras[0])
             else:
                 self.pygame_vd_var.widget.set(selected_camera)
@@ -735,9 +755,10 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
     def __refresh_pygame_cameras(self):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
         selected_camera = self.pygame_vd_var.get()
-        try:
+        if self.pygame_vd_var.widget is not None:
             self.pygame_vd_var.widget.configure(values=["Loading..."])
             self.pygame_vd_var.widget.set("Loading")
+        try:
             new_cameras = PygameCapture.get_cameras(force_newlist=True,backend=selected_backend)
             self.pygame_vd_var.widget.configure(values=new_cameras)
             if selected_camera not in new_cameras:
@@ -1129,6 +1150,7 @@ def _make_segmented_button(frame: ctk.CTkFrame,
     var = _SettingVariable(ctkvar,setting,map_fun=map_fun)
     segmentparent = ctk.CTkFrame(frame)
     button = ctk.CTkSegmentedButton(segmentparent,variable=ctkvar,values=values,command=command)
+    ctkvar.set(initial_value)
     segmentparent.columnconfigure(0,weight=1)
     button.grid(row=0,column=0,padx=0,pady=0,sticky="nsew")
     return lbl,var,segmentparent

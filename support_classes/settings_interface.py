@@ -49,6 +49,8 @@ class Settings(Enum):
     """Duty applied to the refill pump when PID controller detects low levels"""
     REFILL_PERCENTAGE_TRIGGER = "refill_percentage_trigger"
     """Percent loss of solvent that will trigger the refill system"""
+    REFILL_STOP_ON_FULL = "refill_stop_on_full"
+    """If true, then the refill system will use measured levels rather than a time to determine when to stop"""
     BASE_CONTROL_DUTY = "base_control_duty"
     """Duty applied to pumps when controller input is zero"""
     VIDEO_DEVICE = "video_device"
@@ -107,6 +109,7 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.REFILL_TIME: 10,
     Settings.REFILL_DUTY: 10,
     Settings.REFILL_PERCENTAGE_TRIGGER: 20,
+    Settings.REFILL_STOP_ON_FULL: False,
     Settings.BASE_CONTROL_DUTY: 92,
     Settings.AUTO_EXPOSURE: True,
     Settings.EXPOSURE_TIME: 1000,
@@ -133,7 +136,7 @@ _LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings
 _LOG_STATES = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LOG_IMAGES])
 LOGGING_SETTINGS = set([Settings.IMAGE_SAVE_PERIOD, Settings.LOGGING_PERIOD,Settings.IMAGE_SAVE_PERIOD,*_LOG_DIRECTORIES,*_LOG_STATES])
 PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP])
-PID_SETTINGS = set([*PID_PUMPS,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
+PID_SETTINGS = set([*PID_PUMPS,Settings.REFILL_STOP_ON_FULL,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
 CAMERA_SETTINGS = set([Settings.IMAGE_SAVE_PERIOD,Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
 CV_SETTINGS = set([Settings.LEVEL_STABILISATION_PERIOD,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH])
 LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS,Settings.LOG_IMAGES,Settings.IMAGE_DIRECTORY])
