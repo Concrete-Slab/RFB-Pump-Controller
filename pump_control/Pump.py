@@ -298,6 +298,6 @@ class Pump(AsyncRunner,Teardown):
             pass
 
 def is_duty(duty: int):
-    if duty >= 0 and duty <= 255:
+    if isinstance(duty,int) and duty >= 0 and duty <= 255:
         return True
     return False
