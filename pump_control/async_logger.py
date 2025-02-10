@@ -1,5 +1,5 @@
 from typing import Any, Iterable
-from support_classes import SharedState, Settings, Generator, LOGGING_SETTINGS, DEFAULT_SETTINGS, PumpNames, GeneratorException
+from support_classes import SharedState, Settings, Generator, LOGGING_SETTINGS, DEFAULT_SETTINGS, PumpNames, PumpConfig, GeneratorException
 from .async_levelsensor import LevelOutput
 from .async_pidcontrol import Duties
 from .async_serialreader import SpeedReading
@@ -35,15 +35,9 @@ class _DataType(Enum):
             raise NotImplementedError("Unknown Setting: "+setting.value)
 
 
-_HEADERS: dict[_DataType,list[str]] = {
-        _DataType.LEVELS: ["Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"],
-        _DataType.SPEEDS: [f"Pump {str(pmp.value).upper()}" for pmp in PumpNames],
-        _DataType.DUTIES:  ["Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
-    }
+
 
 class DataLogger(Generator[None]):
-
-    headers = {key: ["Elapsed Time",*_HEADERS[key]] for key in _HEADERS.keys()}
 
     def __init__(
             self, 
@@ -72,7 +66,7 @@ class DataLogger(Generator[None]):
             _DataType.LEVELS: lvl_dir
         }
         self.logged: dict[_DataType,bool] = {
-            _DataType.SPEEDS: log_imgs,
+            _DataType.IMAGE: log_imgs,
             _DataType.SPEEDS: log_spds,
             _DataType.DUTIES: log_dtys,
             _DataType.LEVELS: log_lvls
@@ -81,6 +75,14 @@ class DataLogger(Generator[None]):
         self.img_period = image_logging_period
         self.__base_filename: str = ""
         self.img_timer = 0.0
+
+        # _HEADERS: dict[_DataType,list[str]] = {
+        #     _DataType.LEVELS: ["Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"],
+        #     _DataType.SPEEDS: [f"Pump {str(pmp.value).upper()}" for pmp in PumpConfig().pumps],
+        #     _DataType.DUTIES:  ["Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
+        # }
+        # self.headers = {key: ["Elapsed Time",*_HEADERS[key]] for key in _HEADERS.keys()}
+        self.headers = {}
 
     def set_parameters(self,settings: dict[Settings,Any]):
         settings = {key:settings[key] for key in settings if key in LOGGING_SETTINGS}
@@ -123,13 +125,20 @@ class DataLogger(Generator[None]):
     async def _setup(self):
         self.__base_filename = str(datetime.now().strftime("%Y-%m-%d %H-%M-%S"))+".csv"
 
+        _HEADERS: dict[_DataType,list[str]] = {
+            _DataType.LEVELS: ["Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"],
+            _DataType.SPEEDS: [f"Pump {str(pmp.value).upper()}" for pmp in PumpConfig().pumps],
+            _DataType.DUTIES:  ["Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
+        }
+        self.headers = {key: ["Elapsed Time",*_HEADERS[key]] for key in _HEADERS.keys()}
+
         self.img_timer = time.time()
 
         # make directories if they do not exist
         for dtype,dirpath in self.dirs.items():
             if not os.path.isdir(dirpath) and self.logged[dtype]:
                 os.makedirs(dirpath)
-        
+
         for dtype in [key for key in self.headers.keys() if self.logged[key]]:
             with open(self._get_path(dtype),"w",newline="") as f:
                 writer = csv.writer(f)
@@ -143,8 +152,9 @@ class DataLogger(Generator[None]):
 
         duties = self.duty_state.force_value()
         if duties is not None:
+            #TODO This logic of zero padding does not preserve the columns and needs to be changed
             valid_duties = list(duties.values())
-            zero_padding = [0]*max(len(_HEADERS[_DataType.DUTIES])-len(valid_duties), 0)
+            zero_padding = [0]*max(len(self.headers[_DataType.DUTIES])-1-len(valid_duties), 0)
             duties = [*valid_duties,*zero_padding]
         lvl_data = self.level_state.force_value()
         speeds = self.speed_state.force_value()

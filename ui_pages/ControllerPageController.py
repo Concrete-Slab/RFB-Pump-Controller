@@ -5,7 +5,7 @@ from ui_root import UIRoot
 from pump_control import Pump, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
 from .PAGE_EVENTS import CEvents
 from serial_interface import InterfaceException
-from support_classes import GeneratorException, PumpNames
+from support_classes import GeneratorException, PumpNames, PumpConfig
 from .process_controllers import ProcessName
     
 
@@ -44,7 +44,7 @@ class ControllerPageController(UIController):
 
         self.add_listener(CEvents.OPEN_ROI_SELECTION,ProcessName.LEVEL.value.request_ROIs)
 
-        self.add_listener(CEvents.STOP_ALL,lambda: self.pump.run_async(self.pump.emergency_stop([pmp for pmp in PumpNames])))
+        self.add_listener(CEvents.STOP_ALL,lambda: self.pump.run_async(self.pump.emergency_stop([pmp for pmp in PumpConfig().pumps])))
 
         # General state poll bindings
         pump_state_remover = self._add_state(pump.state,self.__handle_pump_state)

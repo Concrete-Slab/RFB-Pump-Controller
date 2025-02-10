@@ -1,6 +1,17 @@
 from enum import Enum
 from typing import Literal
 
+class MEvents(Enum):
+    UPDATE_MICROCONTROLLERS = "update_microcontrollers"
+    """Signals that the UI has requested a new microcontroller list"""
+    NEW_MICROCONTROLLERS = "new_microcontrollers"
+    """Signals that the controller has found new microcontrollers. Callbacks to take list of device names (str) as argument"""
+    SEND_PREMADE = "send_premade"
+    """Signals that the user wishes to upload premade code to the microcontroller. Callbacks to take code filepath (Path) and number of pumps (int) as arguments"""
+    BAD_DEVICE = "bad_device"
+    """Signals that upload to device has failed. Callbacks to take error message (str) as argument"""
+    BAD_FILE = "bad_file"
+    """Signals that the microcontroller code does not exist or is in the wrong format. Arguments to take error message (str) as argument"""
 
 class PSEvents(Enum):
     NEW_PORTS = Literal["new_ports"]

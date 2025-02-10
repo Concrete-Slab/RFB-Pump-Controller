@@ -2,14 +2,11 @@ from enum import Enum
 import json
 from typing import Any
 from pathlib import Path
+from .file_interface import open_local
+from .pump_config import PumpNames, PumpConfig
 
-class PumpNames(Enum):
-    A = "a"
-    B = "b"
-    C = "c"
-    D = "d"
-    E = "e"
-    F = "f"
+
+
 
 class CaptureBackend(Enum):
     ANY = "Default"
@@ -76,6 +73,8 @@ class Settings(Enum):
     """Most recently used serial port"""
     RECENT_SERIAL_INTERFACE = "recent_serial_interface"
     """Most recently used serial interface"""
+    RECENT_MICROCONTROLLER_PROFILE = "recent_microcontroller_profile"
+    """Most recently used microcontroller profile"""
     PROPORTIONAL_GAIN = "proportional_gain"
     """PID controller proportional gain term"""
     INTEGRAL_GAIN = "integral_gain"
@@ -122,6 +121,8 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.IMAGE_RESCALE_FACTOR: 1.0,
     Settings.RECENT_SERIAL_PORT: None,
     Settings.RECENT_SERIAL_INTERFACE: None,
+    #TODO Change these to better defaults
+    Settings.RECENT_MICROCONTROLLER_PROFILE: None,
     Settings.PROPORTIONAL_GAIN: 100,
     Settings.INTEGRAL_GAIN: 0.005,
     Settings.DERIVATIVE_GAIN: 0,
@@ -203,14 +204,14 @@ def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
     if isinstance(ift,ImageFilterType):
         final_settings[Settings.IMAGE_FILTER.value] = ift.value
     # write to file
-    with open(SETTINGS_FILENAME,"w") as f:
+    with open_local(SETTINGS_FILENAME,"w") as f:
         json.dump(final_settings,f)
     # return the modifications to settings
     return modifications
 
 def __open_settings_filesafe() -> dict[Settings,Any]:
     try:
-        with open(SETTINGS_FILENAME,"r") as f:
+        with open_local(SETTINGS_FILENAME,"r") as f:
             settings_in = dict(json.load(f))
         #TODO change to just modifying indices instead of appending
         settings_out = {}
@@ -224,9 +225,14 @@ def __open_settings_filesafe() -> dict[Settings,Any]:
     return settings_out
 
 def __cast_to_correct_type(key,value):
-    if key in PID_PUMPS:
-        if value is not None:
-            value = PumpNames(value)
+    if key in PID_PUMPS and value is not None:
+        try:
+            # value = PumpNames(value)
+            # cast to pump enum
+            value = PumpConfig().pumps(value)
+        except  ValueError:
+            # value is not in pump enum
+            value = None
     elif key in _LOG_DIRECTORIES:
         if value is not None:
             value = Path(value)

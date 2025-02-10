@@ -4,7 +4,7 @@ from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme,Level
 from .UIController import UIController
 from .PAGE_EVENTS import CEvents
 from .process_controllers import ProcessName
-from support_classes import read_settings, Settings, PumpNames, PID_PUMPS
+from support_classes import read_settings, Settings, PumpNames, PumpConfig, PID_PUMPS
 import copy
 
 
@@ -22,7 +22,7 @@ class ControllerPage(ctk.CTkFrame):
         self.columnconfigure(list(range(0,nColumns)),weight=1,uniform="col")
         i=nInitialRows
 
-        for identifier in PumpNames:
+        for identifier in PumpConfig().pumps:
             pump = PumpWidget(self,identifier.value, duty_callback = lambda duty, ident=identifier: self.__manual_duty_set(ident,duty))
             self.pump_map[identifier] = pump
             pump.grid(row=i,column=0,columnspan=nColumns,padx=10,pady=5,sticky="nsew")

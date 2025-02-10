@@ -1,6 +1,6 @@
 from typing import Any
 from serial_interface import GenericInterface, InterfaceException,SUPPORTED_INTERFACES, DEBUG_SUPPORTED_INTERFACES
-from support_classes.settings_interface import Settings, modify_settings
+from support_classes.settings_interface import Settings, modify_settings, PumpConfig
 from .UIController import UIController
 from ui_root import UIRoot
 from pump_control import Pump, PumpState, ErrorState, ReadyState
@@ -41,6 +41,7 @@ class PortSelectController(UIController):
             def __on_response(state: PumpState):
                 if isinstance(state,ReadyState):
                     self.__remove_root_callbacks()
+                    #TODO remove and change
                     self._nextpage("pump_control_page",pump)
                 elif isinstance(state,ErrorState):
                     self.notify_event(PSEvents.ERROR,state.error)
@@ -51,8 +52,8 @@ class PortSelectController(UIController):
 
             self.__root_callbacks = self.__root_callbacks + [remove_queue_callback]
 
-
-            pump.initialise()
+            
+            pump.initialise(6)
 
             # everything has worked! save the settings if they are not debug-specific:
             modifications: dict[Settings,Any] = {}

@@ -9,6 +9,13 @@ from .PAGE_EVENTS import CEvents
 from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox,LevelSettingsBox,LevelDisplay
 from typing import Any, Callable
 
+# This script defines the "processes" that the user can configure and run: the level sensor, the data logger and the PID controller
+# Ways in which the user can interact with these processes are defined by the abstract base class "BaseProcess", with each process having its own implementation
+# (This method ensures that the UI widgets can be coded independently from the process they represent!)
+
+# The ProcessName enum will return a singleton instance of the desired process. This is how the rest of the code should begin their interaction with any process.
+# Because the classes are singleton, they may be referenced before the UI classes or Pump classes exist (although really this should never happen). The set_context method is used to assign these once they are known.
+
 
 class BaseProcess(ABC):
     __instance = None

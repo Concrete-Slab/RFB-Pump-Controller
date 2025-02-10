@@ -1,6 +1,6 @@
 from typing import Any, Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
-from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
+from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, PumpConfig, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
 from concurrent.futures import Future
 from support_classes.camera_interface import Capture
 from .async_levelsensor import LevelSensor, LevelOutput, Rect
@@ -66,15 +66,16 @@ class Pump(AsyncRunner,Teardown):
         self.__poller: SerialReader = SerialReader(self.__serial_interface)
         self.__logger: DataLogger = DataLogger(self.__poller.state,self.__pid.state,self.__level.state)
         
-        settings = read_settings()
-        self.change_settings(settings)
 
 
-    def initialise(self):
+    def initialise(self, n_pumps: int):
         def on_established(future: Future[None]):
             try:
                 future.result()
-                # Future does not have an error: assign ready state to queue
+                # Future does not have an error: assign ready state to queue after changing settings and setting config
+                PumpConfig().generate_pumps(n_pumps)
+                settings = read_settings()
+                self.change_settings(settings)
                 self.state.set_value(ReadyState())
             except InterfaceException as e:
                 # Future completed with error: Assign error state to queue and close loop
@@ -251,7 +252,7 @@ class Pump(AsyncRunner,Teardown):
                 else:
                     high_priority.append(pmp)
         else:
-            low_priority = [pmp.value for pmp in PumpNames]
+            low_priority = [pmp for pmp in PumpConfig().pumps]
             high_priority = []
         
         # now stop these pumps with order determined by pid system importance
@@ -283,7 +284,7 @@ class Pump(AsyncRunner,Teardown):
         # for pump in PumpNames:
             
         #     setout.add(self.__close_without_error(pump))
-        setout.add(self.emergency_stop(list(PumpNames)))
+        setout.add(self.emergency_stop(list(PumpConfig().pumps)))
         return setout
     
     def _sync_teardown(self) -> None:

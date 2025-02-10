@@ -4,7 +4,7 @@ from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from .async_levelsensor import LevelReading, LevelOutput
 from serial_interface import GenericInterface
 import asyncio
-from support_classes import Generator,SharedState, DEFAULT_SETTINGS, Settings, PumpNames
+from support_classes import Generator,SharedState, DEFAULT_SETTINGS, Settings, PumpNames, PumpConfig
 import time
 
 Duties = dict[PumpNames,int]
@@ -46,7 +46,8 @@ class PIDRunner(Generator[Duties]):
             Settings.CATHOLYTE_REFILL_PUMP: catholyte_refill_pump
         }
 
-        self.__prev_duties = {pmp:0 for pmp in PumpNames}
+        # self.__prev_duties = {pmp:0 for pmp in PumpConfig().pumps}
+        self.__prev_duties = {}
         self.__refill_time = refill_time
         self.__refill_duty = refill_duty
         self.__refill_percentage_trigger = refill_percentage
@@ -65,6 +66,7 @@ class PIDRunner(Generator[Duties]):
         self.__refill_finish_time: float | None = None
 
     async def _setup(self):
+        self.__prev_duties = {pmp:0 for pmp in PumpConfig().pumps}
         self.__pid = PID(Kp=-self.__proportional_gain, Ki=-self.__integral_gain, Kd=self.__derivative_gain, setpoint=0, sample_time=None, 
         output_limits=(-(255-self.__base_duty), 255-self.__base_duty), auto_mode=True, proportional_on_measurement=False, error_map=None)
         #TODO why on earth is this next bit necessary?

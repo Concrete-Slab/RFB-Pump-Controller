@@ -4,7 +4,7 @@ from PIL import Image
 import cv2
 from support_classes.settings_interface import read_setting
 from ui_root import UIRoot, EventFunction, StateFunction, CallbackRemover
-from support_classes import read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture, CAMERA_SETTINGS
+from support_classes import read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PumpConfig, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture, CAMERA_SETTINGS
 from cv2_gui.cv2_multiprocessing import InputProcess
 # #TODO make independent of model class
 from pump_control.async_levelsensor import LevelReading, LevelOutput
@@ -246,7 +246,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
         self.title(self.ALERT_TITLE)
 
         default_options = ["None"]
-        for pmpname in PumpNames:
+        for pmpname in PumpConfig().pumps:
             default_options.append(pmpname.value.lower())
 
         pid_settings = read_settings(*PID_SETTINGS)
@@ -462,7 +462,7 @@ def _str2json(str_result: str) -> PumpNames|None:
     if res == "None":
         out = None
     else:
-        out = PumpNames(res)
+        out = PumpConfig().pumps(res)
     return out
 
 Rect = tuple[int,int,int,int]

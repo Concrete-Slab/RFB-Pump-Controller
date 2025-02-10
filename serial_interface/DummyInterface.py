@@ -1,6 +1,6 @@
 from .GenericInterface import InterfaceException
 from .SerialInterface import write_loop,read_loop,SerialInterface
-from support_classes import PumpNames, SharedState
+from support_classes import PumpNames, PumpConfig, SharedState
 import random
 import threading
 import queue
@@ -39,7 +39,8 @@ def dummy_serial_loop(port, read_queue: queue.Queue[str], write_queue: queue.Que
 
 class DummySerial(Serial):
     def __init__(self, port: str | None = None, baudrate: int = 9600, bytesize: int = 8, parity: str = "N", stopbits: float = 1, timeout: float | None = None, xonxoff: bool = False, rtscts: bool = False, write_timeout: float | None = None, dsrdtr: bool = False, inter_byte_timeout: float | None = None, exclusive: float | None = None) -> None:
-        self.applied_duties = {pmp.value:str(0) for pmp in PumpNames}
+        # self.applied_duties = {pmp.value:"0" for pmp in PumpConfig().pumps}
+        self.applied_duties = {}
         self.output_pointer = 0
         self.output = "0,0,0,0,0,0\n"
         self._generate_output()
