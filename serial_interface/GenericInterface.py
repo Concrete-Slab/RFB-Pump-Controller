@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 import serial.tools.list_ports
 
+DUMMY_PORT = "Dummy Port"
+DUMMY_DESCRIPTION = "Debug Only"
+
+
 class GenericInterface(ABC):
 
     def __init__(self,port,**kwargs) -> None:
@@ -36,8 +40,8 @@ class GenericInterface(ABC):
             COM_str[i] = COM_ports[i].device
             description[i] = COM_ports[i].description
         if debug:
-            COM_str = COM_str + ["Dummy port"]
-            description = description + [""]
+            COM_str = COM_str + DUMMY_PORT
+            description = description + DUMMY_DESCRIPTION
 
         return COM_str,description
     
