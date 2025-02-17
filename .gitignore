@@ -11,3 +11,4 @@
 settings.json
 /.vscode/
 vision_model/Datasets/**/*.json
+**/local
