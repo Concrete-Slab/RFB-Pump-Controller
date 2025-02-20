@@ -40,8 +40,8 @@ class GenericInterface(ABC):
             COM_str[i] = COM_ports[i].device
             description[i] = COM_ports[i].description
         if debug:
-            COM_str = COM_str + DUMMY_PORT
-            description = description + DUMMY_DESCRIPTION
+            COM_str = COM_str + [DUMMY_PORT]
+            description = description + [DUMMY_DESCRIPTION]
 
         return COM_str,description
     

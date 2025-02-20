@@ -1,6 +1,6 @@
 from .GenericInterface import InterfaceException
 from .SerialInterface import write_loop,read_loop,SerialInterface
-from support_classes import PumpNames, PumpConfig, SharedState
+from support_classes import PumpConfig, SharedState
 import random
 import threading
 import queue
@@ -38,11 +38,11 @@ def dummy_serial_loop(port, read_queue: queue.Queue[str], write_queue: queue.Que
 
 
 class DummySerial(Serial):
-    def __init__(self, port: str | None = None, baudrate: int = 9600, bytesize: int = 8, parity: str = "N", stopbits: float = 1, timeout: float | None = None, xonxoff: bool = False, rtscts: bool = False, write_timeout: float | None = None, dsrdtr: bool = False, inter_byte_timeout: float | None = None, exclusive: float | None = None) -> None:
-        # self.applied_duties = {pmp.value:"0" for pmp in PumpConfig().pumps}
-        self.applied_duties = {}
+    def __init__(self, num_pumps: int, port: str | None = None, baudrate: int = 9600, bytesize: int = 8, parity: str = "N", stopbits: float = 1, timeout: float | None = None, xonxoff: bool = False, rtscts: bool = False, write_timeout: float | None = None, dsrdtr: bool = False, inter_byte_timeout: float | None = None, exclusive: float | None = None) -> None:
+        names = PumpConfig._allowable_values[:num_pumps]
+        self.applied_duties = {name:"0" for name in names}
         self.output_pointer = 0
-        self.output = "0,0,0,0,0,0\n"
+        self.output = "0,"*(num_pumps-1)+"0\n"
         self._generate_output()
         self.time_of_last_input = time.time()
 
@@ -82,6 +82,7 @@ class DummySerial(Serial):
                 num_out = int(num_in - 50 + 100 * random.random())
             return str(num_out)
         outlst = [random_value(val) for val in self.applied_duties.values()]
+        outlst = ",".join(random_value)
         csv = ",".join(outlst)
         self.output = f"{csv}\n"
         self.output_pointer = 0
