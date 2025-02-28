@@ -1,12 +1,11 @@
 from typing import Any, Iterable
 from support_classes.settings_interface import CAMERA_SETTINGS, Settings
-from .UIController import UIController
-from ui_root import UIRoot
+from ui_root import UIRoot, UIController
 from pump_control import Pump, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
-from .PAGE_EVENTS import CEvents
+from .CONTROLLER_EVENTS import CEvents, ProcessName
 from serial_interface import InterfaceException
 from support_classes import GeneratorException, PumpNames, PumpConfig
-from .process_controllers import ProcessName
+from .process_controllers import BaseProcess, LevelProcess
     
 
 class ControllerPageController(UIController):
@@ -25,26 +24,26 @@ class ControllerPageController(UIController):
 
         # dependency injection
         for process in ProcessName:
-            process.value.get_instance().set_context(self,self.pump)
+            BaseProcess.instanceof(process).set_context(self,self.pump)
 
         # General process events
-        def start_process(process: ProcessName):
-            process.value.get_instance().start()
-        self.add_listener(CEvents.START_PROCESS,start_process)
-        def close_process(process: ProcessName):
-            process.value.get_instance().close()
-        self.add_listener(CEvents.CLOSE_PROCESS,close_process)
-        def open_settings(process: ProcessName):
-            process.value.get_instance().open_settings()
-        self.add_listener(CEvents.OPEN_SETTINGS, open_settings)
+        def start_process(event: CEvents.StartProcess):
+            BaseProcess.instanceof(event.process_name).start()
+        self.add_listener(CEvents.StartProcess,start_process)
+        def close_process(event: CEvents.CloseProcess):
+            BaseProcess.instanceof(event.process_name).close()
+        self.add_listener(CEvents.CloseProcess,close_process)
+        def open_settings(event: CEvents.OpenSettings):
+            BaseProcess.instanceof(event.process_name).open_settings()
+        self.add_listener(CEvents.OpenSettings, open_settings)
 
-        self.add_listener(CEvents.MANUAL_DUTY_SET,self.pump.manual_set_duty)
+        self.add_listener(CEvents.ManualDutySet,lambda event: self.pump.manual_set_duty(event.pump_id, event.new_duty))
 
-        self.add_listener(CEvents.SETTINGS_MODIFIED,self.__handle_settings_changed)
+        self.add_listener(CEvents.SettingsModified,self.__handle_settings_changed)
 
-        self.add_listener(CEvents.OPEN_ROI_SELECTION,ProcessName.LEVEL.value.request_ROIs)
+        self.add_listener(CEvents.OpenROISelection,lambda event: LevelProcess.get_instance().request_ROIs())
 
-        self.add_listener(CEvents.STOP_ALL,lambda: self.pump.run_async(self.pump.emergency_stop([pmp for pmp in PumpConfig().pumps])))
+        self.add_listener(CEvents.StopAll,lambda event: self.pump.run_async(self.pump.emergency_stop([pmp for pmp in PumpConfig().pumps])))
 
         # General state poll bindings
         pump_state_remover = self._add_state(pump.state,self.__handle_pump_state)
@@ -62,12 +61,12 @@ class ControllerPageController(UIController):
                     msg = "Serial port disconnected"
                 self._nextpage("port_select_page",starting_prompt=msg)
             if isinstance(error,LevelException) or isinstance(error,PIDException) or isinstance(error,ReadException):
-                self.notify_event(CEvents.ERROR,error)
+                self.notify_event(CEvents.Error(error))
         elif isinstance(newstate,ReadyState):
-            self.notify_event(CEvents.READY)
+            self.notify_event(CEvents.Ready())
         elif isinstance(newstate, ActiveState):
             for pmp in newstate.auto_duties.keys():
-                self.notify_event(CEvents.AUTO_DUTY_SET,pmp,newstate.auto_duties[pmp])
+                self.notify_event(CEvents.AutoDutySet(pmp,newstate.auto_duties[pmp]))
 
     # SERIAL POLLING CALLBACKS
     def __start_polling(self):
@@ -79,17 +78,18 @@ class ControllerPageController(UIController):
     def __close_poller(self):
         self.pump.stop_polling()
 
-    def __handlerunning_poller(self,newstate):
+    def __handlerunning_poller(self,newstate: bool):
         if not newstate:
-            self.notify_event(CEvents.ERROR,GeneratorException("Speed readings have stopped unexpectedly"))
+            self.notify_event(CEvents.Error(GeneratorException("Speed readings have stopped unexpectedly")))
 
     def __handlespeeds_poller(self,newspeeds: dict[PumpNames,float]):
         new_dict = newspeeds
         for pmp in new_dict.keys():
-            self.notify_event(CEvents.AUTO_SPEED_SET,pmp,new_dict[pmp])
+            self.notify_event(CEvents.AutoSpeedSet(pmp,new_dict[pmp]))
 
     # SETTINGS MODIFICATION LOGIC
-    def __handle_settings_changed(self, modifications: dict[Settings, Any]):
+    def __handle_settings_changed(self, event: CEvents.SettingsModified):
+        modifications = event.modifications
         def _contains_any(lst1: Iterable, lst2: Iterable):
             for item in lst1:
                 if item in lst2:
@@ -97,6 +97,6 @@ class ControllerPageController(UIController):
             return False
         if _contains_any(modifications,CAMERA_SETTINGS):
             # if camera settings are modified, image scaling/size/position may have changed, so need to reselect data
-            ProcessName.LEVEL.value.level_data = None
+            LevelProcess.get_instance().level_data = None
         self.pump.change_settings(modifications)
         

@@ -3,7 +3,7 @@ from pathlib import Path
 from contextlib import contextmanager
 
 
-LOCAL_DIRECTORY = Path().absolute().parent/"local"
+LOCAL_DIRECTORY = Path(__file__).absolute().parent.parent/"local"
 
 def get_path(filepath: Path|str) -> Path:
     return LOCAL_DIRECTORY/filepath

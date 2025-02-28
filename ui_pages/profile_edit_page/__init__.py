@@ -1,0 +1,1 @@
+from .page_class import ProfileEdit

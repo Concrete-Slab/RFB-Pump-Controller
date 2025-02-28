@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from typing import Callable
 from ui_root import UIRoot
-from ui_pages.toplevel_boxes import AlertBox
+from ui_pages import AlertBox
 
 def test_widget(box_constructor: Callable[..., AlertBox]):
     test_app = UIRoot()

@@ -1,11 +1,10 @@
 from abc import ABC,abstractmethod
 
 from support_classes.shared_state import SharedState
-from .UIController import UIController
+from ui_root import UIController
 from pump_control import Pump
 from support_classes import PumpNames, Settings
-from enum import Enum
-from .PAGE_EVENTS import CEvents
+from .CONTROLLER_EVENTS import CEvents, ProcessName
 from .toplevel_boxes import LevelSelect,DataSettingsBox,PIDSettingsBox,LevelSettingsBox,LevelDisplay
 from typing import Any, Callable
 
@@ -28,6 +27,18 @@ class BaseProcess(ABC):
     def set_context(self,controller_context: UIController, pump_context: Pump):
         self._controller_context = controller_context
         self._pump_context = pump_context
+
+    @staticmethod
+    def instanceof(process_name: ProcessName) -> "BaseProcess":
+        match process_name:
+            case ProcessName.PID:
+                return PIDProcess.get_instance()
+            case ProcessName.LEVEL:
+                return LevelProcess.get_instance()
+            case ProcessName.DATA:
+                return DataProcess.get_instance()
+            case _:
+                raise NotImplementedError(f"Process {process_name} does not exist")
 
     @classmethod
     def get_instance(cls):
@@ -72,14 +83,14 @@ class PIDProcess(BaseProcess):
     def __handle_running(self,newstate: bool):
         if self._controller_context:
             if newstate:
-                self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.PID)
+                self._controller_context.notify_event(CEvents.ProcessStarted(ProcessName.PID))
             else:
-                self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.PID)
+                self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.PID))
 
     def __handle_duties(self,newduties: dict[PumpNames,int]):
         if self._controller_context:
             for pmp in newduties.keys():
-                self._controller_context.notify_event(CEvents.AUTO_DUTY_SET,pmp,newduties[pmp])
+                self._controller_context.notify_event(CEvents.AutoDutySet(pmp,newduties[pmp]))
     
     def close(self):
         if self._pump_context:
@@ -91,14 +102,14 @@ class PIDProcess(BaseProcess):
     
     def open_settings(self):
         if self._controller_context:
-            on_failure = lambda: self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.PID)
+            on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.PID))
             on_success = self.__on_settings_modified
             self._controller_context._create_alert(PIDSettingsBox,on_success=on_success,on_failure=on_failure)
     
     def __on_settings_modified(self,modifications: dict[Settings,Any]):
         if self._controller_context:
-            self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
-            self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.PID)
+            self._controller_context.notify_event(CEvents.SettingsModified(modifications))
+            self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.PID))
     
 class LevelProcess(BaseProcess):
 
@@ -118,19 +129,19 @@ class LevelProcess(BaseProcess):
             # on_success = self.__send_level_config
             # box = self._controller_context._create_alert(LevelSelect,on_success=on_success,on_failure=on_failure)
             if self.level_data is None:
-                self.request_ROIs(after_success=self.__send_level_config,after_failure= lambda: self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.LEVEL))
+                self.request_ROIs(after_success=self.__send_level_config,after_failure= lambda: self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.LEVEL)))
             else:
                 self.__send_level_config()
 
     def request_ROIs(self,after_success: Callable[[None],None]|None = None,after_failure: Callable[[None],None] = None):
         if self._controller_context:
             def on_failure():
-                self._controller_context.notify_event(CEvents.CLOSE_ROI_SELECTION)
+                self._controller_context.notify_event(CEvents.CloseROISelection())
                 if after_failure:
                     after_failure()
             def on_success(r1: Rect, r2: Rect, h: Rect, ref_vol: float):
                 self.level_data = _LevelData(r1,r2,h,ref_vol)
-                self._controller_context.notify_event(CEvents.CLOSE_ROI_SELECTION)
+                self._controller_context.notify_event(CEvents.CloseROISelection())
                 if after_success:
                     after_success()
             box = self._controller_context._create_alert(LevelSelect,on_success=on_success,on_failure=on_failure)
@@ -148,7 +159,7 @@ class LevelProcess(BaseProcess):
     def __handle_running(self,isrunning: bool):
         if self._controller_context:
             if isrunning and self.display_state:
-                self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.LEVEL)
+                self._controller_context.notify_event(CEvents.ProcessStarted(ProcessName.LEVEL))
 
                 def on_close():
                     if self._pump_context is not None:
@@ -156,7 +167,7 @@ class LevelProcess(BaseProcess):
                 
                 self.display_box = self._controller_context._create_alert(LevelDisplay,self.display_state,on_failure=on_close,on_success=on_close)
             else:
-                self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.LEVEL)
+                self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.LEVEL))
                 if self.display_box:
                     self.display_box.destroy()
 
@@ -171,13 +182,13 @@ class LevelProcess(BaseProcess):
     def open_settings(self):
         if self._controller_context:
             on_success = self.__on_settings_modified
-            on_failure = lambda: self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.LEVEL)
+            on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.LEVEL))
             box = self._controller_context._create_alert(LevelSettingsBox,on_failure=on_failure,on_success=on_success)
 
     def __on_settings_modified(self, modifications: dict[Settings,Any]):
         if self._controller_context:
-            self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
-            self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.LEVEL)
+            self._controller_context.notify_event(CEvents.SettingsModified(modifications))
+            self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.LEVEL))
 
 Rect = tuple[int,int,int,int]
 class _LevelData:
@@ -206,9 +217,9 @@ class DataProcess(BaseProcess):
     def __handle_running(self,newstate: bool):
         if self._controller_context:
             if newstate:
-                self._controller_context.notify_event(CEvents.PROCESS_STARTED,ProcessName.DATA)
+                self._controller_context.notify_event(CEvents.ProcessStarted(ProcessName.DATA))
             else:
-                self._controller_context.notify_event(CEvents.PROCESS_CLOSED,ProcessName.DATA)
+                self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.DATA))
         
 
     @property
@@ -218,19 +229,18 @@ class DataProcess(BaseProcess):
     def open_settings(self):
         if self._controller_context:
             on_success = self.__on_settings_modified
-            on_failure = lambda: self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.DATA)
+            on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.DATA))
             self._controller_context._create_alert(DataSettingsBox,on_success=on_success,on_failure=on_failure)
 
     def __on_settings_modified(self,modifications: dict[Settings,Any]):
         if self._controller_context:
-            self._controller_context.notify_event(CEvents.SETTINGS_MODIFIED,modifications)
-            self._controller_context.notify_event(CEvents.CLOSE_SETTINGS,ProcessName.DATA)
+            self._controller_context.notify_event(CEvents.SettingsModified(modifications))
+            self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.DATA))
         
-class ProcessName(Enum):
-    PID = PIDProcess.get_instance()
-    """Process that runs the PID duty control feedback loop"""
-    DATA = DataProcess.get_instance()
-    """Process that writes duties and levels to respective csv files during operation"""
-    LEVEL = LevelProcess.get_instance()
-    """Process that reads the electrolyte reservoir levels"""
-
+# class ProcessName(Enum):
+#     PID = PIDProcess.get_instance()
+#     """Process that runs the PID duty control feedback loop"""
+#     DATA = DataProcess.get_instance()
+#     """Process that writes duties and levels to respective csv files during operation"""
+#     LEVEL = LevelProcess.get_instance()
+#     """Process that reads the electrolyte reservoir levels"""

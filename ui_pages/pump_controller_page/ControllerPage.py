@@ -1,9 +1,8 @@
-from typing import Any
 import customtkinter as ctk
-from .ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme,LevelBoolSwitch
-from .UIController import UIController
-from .PAGE_EVENTS import CEvents
-from .process_controllers import ProcessName
+from ..ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme,LevelBoolSwitch
+from ui_root import UIController
+from .CONTROLLER_EVENTS import CEvents, ProcessName
+from .process_controllers import BaseProcess
 from support_classes import read_settings, Settings, PumpNames, PumpConfig, PID_PUMPS
 import copy
 
@@ -44,7 +43,7 @@ class ControllerPage(ctk.CTkFrame):
                                          fg_color=ApplicationTheme.ERROR_COLOR,
                                          hover_color=ApplicationTheme.GRAY,
                                          corner_radius=ApplicationTheme.BUTTON_CORNER_RADIUS,
-                                         command=lambda: self.UIcontroller.notify_event(CEvents.STOP_ALL),
+                                         command=lambda: self.UIcontroller.notify_event(CEvents.StopAll()),
                                         )
         
         self.apply_button = ctk.CTkButton(self,
@@ -66,15 +65,15 @@ class ControllerPage(ctk.CTkFrame):
 
         for j,process in enumerate(ProcessName):
             process_state_var = ctk.IntVar(value=0)
-            if process.value.get_instance().has_settings:
-                settings_fun = lambda process_name = process: self.UIcontroller.notify_event(CEvents.OPEN_SETTINGS,process_name)
+            if BaseProcess.instanceof(process).has_settings:
+                settings_fun = lambda process_name = process: self.UIcontroller.notify_event(CEvents.OpenSettings(process_name))
             else:
                 settings_fun = None
             if process == ProcessName.LEVEL:
-                process_box = LevelBoolSwitch(self,process_state_var,str(process.value.name),state_callback=lambda state,process_name = process: self.__switch_pressed(state,process_name),settings_callback=settings_fun,ROI_callback=self.__open_ROI_selection)
+                process_box = LevelBoolSwitch(self,process_state_var,str(BaseProcess.instanceof(process).name),state_callback=lambda state,process_name = process: self.__switch_pressed(state,process_name),settings_callback=settings_fun,ROI_callback=self.__open_ROI_selection)
                 pass
             else:
-                process_box = BoolSwitch(self,process_state_var,str(process.value.get_instance().name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
+                process_box = BoolSwitch(self,process_state_var,str(BaseProcess.instanceof(process).name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
             
             process_box.grid(row=0,column=len(ProcessName)-1-j,padx=10,pady=5,sticky="nsew")
             self.process_states[process] = process_state_var
@@ -82,51 +81,51 @@ class ControllerPage(ctk.CTkFrame):
 
         # add remaining controller listeners
 
-        self.UIcontroller.add_listener(CEvents.ERROR,self.__on_error)
-        self.UIcontroller.add_listener(CEvents.READY,self.__on_ready)
-        self.UIcontroller.add_listener(CEvents.PROCESS_STARTED, lambda prefix: self.__set_switch_state(prefix,SwitchState.ON))
-        self.UIcontroller.add_listener(CEvents.PROCESS_CLOSED, lambda prefix: self.__set_switch_state(prefix,SwitchState.OFF))
-        self.UIcontroller.add_listener(CEvents.AUTO_DUTY_SET,self.__auto_duty_set)
-        self.UIcontroller.add_listener(CEvents.AUTO_SPEED_SET,self.__auto_speed_set)
-        self.UIcontroller.add_listener(CEvents.CLOSE_SETTINGS,lambda process_name: self.process_boxes[process_name].set_settings_button_active(True))
-        self.UIcontroller.add_listener(CEvents.SETTINGS_MODIFIED,self.__maybe_change_pumps)
-        self.UIcontroller.add_listener(CEvents.CLOSE_ROI_SELECTION, self.__close_ROI_selection)
+        self.UIcontroller.add_listener(CEvents.Error,self.__on_error)
+        self.UIcontroller.add_listener(CEvents.Ready,self.__on_ready)
+        self.UIcontroller.add_listener(CEvents.ProcessStarted, lambda event: self.__set_switch_state(event.process_name,SwitchState.ON))
+        self.UIcontroller.add_listener(CEvents.ProcessClosed, lambda event: self.__set_switch_state(event.process_name,SwitchState.OFF))
+        self.UIcontroller.add_listener(CEvents.AutoDutySet,self.__auto_duty_set)
+        self.UIcontroller.add_listener(CEvents.AutoSpeedSet,self.__auto_speed_set)
+        self.UIcontroller.add_listener(CEvents.CloseSettings,lambda event: self.process_boxes[event.process_name].set_settings_button_active(True))
+        self.UIcontroller.add_listener(CEvents.SettingsModified,self.__maybe_change_pumps)
+        self.UIcontroller.add_listener(CEvents.CloseROISelection, self.__close_ROI_selection)
 
-        self.UIcontroller.add_listener(CEvents.START_PROCESS,self.__on_levels_start)
-        self.UIcontroller.add_listener(CEvents.PROCESS_CLOSED,self.__on_levels_closed)
+        self.UIcontroller.add_listener(CEvents.StartProcess,self.__on_levels_start)
+        self.UIcontroller.add_listener(CEvents.ProcessClosed,self.__on_levels_closed)
 
 
-    def __on_levels_start(self,process):
-        if process == ProcessName.LEVEL:
+    def __on_levels_start(self,event: CEvents.StartProcess):
+        if event.process_name == ProcessName.LEVEL:
             lvlswitch: LevelBoolSwitch = self.process_boxes[ProcessName.LEVEL]
             lvlswitch.set_ROI_button_active(False,with_callback=False)
 
-    def __on_levels_closed(self,process):
-        if process == ProcessName.LEVEL:
+    def __on_levels_closed(self,event: CEvents.ProcessClosed):
+        if event.process_name == ProcessName.LEVEL:
             lvlswitch: LevelBoolSwitch = self.process_boxes[ProcessName.LEVEL]
             lvlswitch.set_ROI_button_active(True,with_callback=False)
 
-    def __auto_duty_set(self,identifier: PumpNames,duty: int):
-        self.pump_map[identifier].dutyVar.set(duty)
+    def __auto_duty_set(self, event: CEvents.AutoDutySet):
+        self.pump_map[event.pump_id].dutyVar.set(event.new_duty)
 
-    def __auto_speed_set(self,identifier: PumpNames ,speed):
-        self.pump_map[identifier].speedVar.set(speed)
+    def __auto_speed_set(self, event: CEvents.AutoSpeedSet):
+        self.pump_map[event.pump_id].speedVar.set(event.new_speed)
 
     def __manual_duty_set(self,identifier:PumpNames,duty: int):
-        self.UIcontroller.notify_event(CEvents.MANUAL_DUTY_SET,identifier,duty)
+        self.UIcontroller.notify_event(CEvents.ManualDutySet(identifier,duty))
 
     def __open_ROI_selection(self):
-        self.UIcontroller.notify_event(CEvents.OPEN_ROI_SELECTION)
+        self.UIcontroller.notify_event(CEvents.OpenROISelection())
     
-    def __close_ROI_selection(self):
+    def __close_ROI_selection(self, event: CEvents.CloseROISelection):
         lvlswitch: LevelBoolSwitch = self.process_boxes[ProcessName.LEVEL]
         lvlswitch.set_ROI_button_active(True)
 
-    def __switch_pressed(self,new_state: SwitchState, switch_prefix: str):
+    def __switch_pressed(self,new_state: SwitchState, switch_prefix: ProcessName):
         if new_state == SwitchState.STARTING:
-            self.UIcontroller.notify_event(CEvents.START_PROCESS,switch_prefix)
+            self.UIcontroller.notify_event(CEvents.StartProcess(switch_prefix))
         elif new_state == SwitchState.CLOSING:
-            self.UIcontroller.notify_event(CEvents.CLOSE_PROCESS,switch_prefix)
+            self.UIcontroller.notify_event(CEvents.CloseProcess(switch_prefix))
 
     def __set_switch_state(self,switch_prefix: ProcessName,state: SwitchState):
         self.process_states[switch_prefix].set(int(state.value))
@@ -136,10 +135,10 @@ class ControllerPage(ctk.CTkFrame):
             elif state == SwitchState.OFF:
                 self.__set_pid_colors(ApplicationTheme.MANUAL_PUMP_COLOR)
 
-    def __on_error(self,error):
-        self.status_label.configure(text = f"Error: {str(error)}",text_color=ApplicationTheme.ERROR_COLOR)
+    def __on_error(self,error_event: CEvents.Error):
+        self.status_label.configure(text = f"Error: {str(error_event.err)}",text_color=ApplicationTheme.ERROR_COLOR)
 
-    def __on_ready(self):
+    def __on_ready(self,*args):
         self.status_label.configure(text="Ready",text_color=ApplicationTheme.WHITE)
             
     def __set_pid_colors(self,new_color):
@@ -147,7 +146,8 @@ class ControllerPage(ctk.CTkFrame):
             if pmp is not None:
                 self.pump_map[pmp].set_bgcolor(new_color)
 
-    def __maybe_change_pumps(self,modified_settings: dict[Settings, Any]):
+    def __maybe_change_pumps(self, event: CEvents.SettingsModified):
+        modified_settings = event.modifications
         pumps_changed = False
         new_auto_pumps = copy.copy(self.auto_pumps)
         for setting in PID_PUMPS:

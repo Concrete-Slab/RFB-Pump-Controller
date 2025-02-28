@@ -10,18 +10,19 @@ from serial import Serial
 # Mocking classes that simulate behaviour of a serial port.
 
 class DummyInterface(SerialInterface):
-    def __init__(self, port: str, baudrate: int = 9600, **kwargs) -> None:
+    def __init__(self, num_pumps: int, port: str, baudrate: int = 9600, **kwargs) -> None:
         try:
             super().__init__(port, baudrate, **kwargs)
         except InterfaceException:
             pass
-        self._SerialInterface__thread = threading.Thread(target = dummy_serial_loop, args = (self.port,self._SerialInterface__read_queue,self._SerialInterface__write_queue,self._SerialInterface__thread_alive,self._SerialInterface__thread_error))
+        self._SerialInterface__thread = threading.Thread(target = dummy_serial_loop, args = (num_pumps,self.port,self._SerialInterface__read_queue,self._SerialInterface__write_queue,self._SerialInterface__thread_alive,self._SerialInterface__thread_error))
 
 
-def dummy_serial_loop(port, read_queue: queue.Queue[str], write_queue: queue.Queue[str], alive_event: threading.Event, error_state: SharedState[BaseException|None]):
+
+def dummy_serial_loop(num_pumps: int, port, read_queue: queue.Queue[str], write_queue: queue.Queue[str], alive_event: threading.Event, error_state: SharedState[BaseException|None]):
     serial_inst = None
     try:
-        serial_inst = DummySerial(port,timeout=0,baudrate=9600)
+        serial_inst = DummySerial(num_pumps, port,timeout=0,baudrate=9600)
         alive_event.set()
         while alive_event.is_set():
             ## WRITE TO PORT FROM QUEUE
