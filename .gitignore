@@ -3,11 +3,6 @@
 *.png
 *.jpg
 **/__pycache__/
-/Legacy/
-**/node_modules/
-**/package-lock.json
-**/package.json
-**/pumps/
 settings.json
 /.vscode/
 vision_model/Datasets/**/*.json
