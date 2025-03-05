@@ -40,7 +40,7 @@ def dummy_serial_loop(num_pumps: int, port, read_queue: queue.Queue[str], write_
 
 class DummySerial(Serial):
     def __init__(self, num_pumps: int, port: str | None = None, baudrate: int = 9600, bytesize: int = 8, parity: str = "N", stopbits: float = 1, timeout: float | None = None, xonxoff: bool = False, rtscts: bool = False, write_timeout: float | None = None, dsrdtr: bool = False, inter_byte_timeout: float | None = None, exclusive: float | None = None) -> None:
-        names = PumpConfig._allowable_values[:num_pumps]
+        names = PumpConfig.allowable_values[:num_pumps]
         self.applied_duties = {name:"0" for name in names}
         self.output_pointer = 0
         self.output = "0,"*(num_pumps-1)+"0\n"

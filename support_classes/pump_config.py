@@ -5,7 +5,7 @@ class PumpNames(StrEnum):
     pass
 
 class PumpConfig:
-    _allowable_values = list("abcdefghijklmnopqrstuvwxyz")
+    allowable_values = list("abcdefghijklmnopqrstuvwxyz")
     _instance = None
 
     def __new__(cls):
@@ -15,7 +15,7 @@ class PumpConfig:
             cls._instance._frozen = False
         return cls._instance
     
-    max_pumps = len(_allowable_values)
+    max_pumps = len(allowable_values)
     
     def generate_pumps(self, n: int):
         if self._frozen:

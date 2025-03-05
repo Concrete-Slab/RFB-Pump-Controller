@@ -12,8 +12,8 @@ class ProfileManagerPageController(UIController):
         self.__current_profiles = []
         self.add_listener(PrEvents.RequestProfiles,self.__get_profiles)
         self.add_listener(PrEvents.Back,lambda event: self._back())
-        self.add_listener(PrEvents.NewProfile,lambda event: self._next_page(ProfileEdit(None,PumpConfig._allowable_values)))
-        self.add_listener(PrEvents.EditProfile,lambda event: self._next_page(ProfileEdit(event.profile_name,PumpConfig._allowable_values)))
+        self.add_listener(PrEvents.NewProfile,lambda event: self._next_page(ProfileEdit(None,PumpConfig.allowable_values)))
+        self.add_listener(PrEvents.EditProfile,lambda event: self._next_page(ProfileEdit(event.profile_name,PumpConfig.allowable_values)))
         self.add_listener(PrEvents.DeleteProfile,self.__delete_profile)
 
     def __delete_profile(self,event: PrEvents.DeleteProfile):
