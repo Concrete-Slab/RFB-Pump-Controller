@@ -229,7 +229,7 @@ class PIDRunner(Generator[Duties]):
     async def __write_nullsafe(self,pmp: PumpNames,duty: int) -> bool:
         if (pmp is not None) and (self.__prev_duties[pmp] != duty):
             pmpstr = pmp.value
-            await self.__serial_interface.write(GenericInterface.format_duty(pmpstr,duty))
+            self.__serial_interface.write(GenericInterface.format_duty(pmpstr,duty))
             self.__prev_duties[pmp] = duty
             await asyncio.sleep(1.5)
         return (pmp is not None)
@@ -249,6 +249,7 @@ class PIDRunner(Generator[Duties]):
                 await asyncio.wait_for(self.__level_event.wait(),timeout = PID_DATA_TIMEOUT)
                 if self.__refill_start_time is not None:
                     # system is refilling, check to end refill in the case that new levels will take too long
+                    # TODO Major error here????????????????
                     await self.__handle_refill(1,0)
                 break
             except TimeoutError:

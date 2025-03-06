@@ -43,7 +43,7 @@ class ControllerPageController(UIController):
 
         self.add_listener(CEvents.OpenROISelection,lambda event: LevelProcess.get_instance().request_ROIs())
 
-        self.add_listener(CEvents.StopAll,lambda event: self.pump.run_async(self.pump.emergency_stop([pmp for pmp in PumpConfig().pumps])))
+        self.add_listener(CEvents.StopAll,lambda event: self.pump.run_sync(self.pump.emergency_stop,args=([pmp for pmp in PumpConfig().pumps],)))
 
         # General state poll bindings
         pump_state_remover = self._add_state(pump.state,self.__handle_pump_state)
@@ -59,7 +59,9 @@ class ControllerPageController(UIController):
                 msg = str(error)
                 if msg == "" or msg[0] == "<":
                     msg = "Serial port disconnected"
-                self._nextpage("port_select_page",starting_prompt=msg)
+                # self._nextpage("port_select_page",starting_prompt=msg)
+                # TODO implement back_custom without import clashes
+                self._back()
             if isinstance(error,LevelException) or isinstance(error,PIDException) or isinstance(error,ReadException):
                 self.notify_event(CEvents.Error(error))
         elif isinstance(newstate,ReadyState):

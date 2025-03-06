@@ -27,7 +27,7 @@ class GenericInterface(ABC):
         pass
 
     @abstractmethod
-    async def write(self,val: str):
+    def write(self,val: str):
         pass
 
     @staticmethod

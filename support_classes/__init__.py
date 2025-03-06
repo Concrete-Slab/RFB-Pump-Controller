@@ -8,3 +8,4 @@ from .loggable import Loggable
 from .settings_interface import read_settings, modify_settings, Settings, DEFAULT_SETTINGS, PID_SETTINGS, LOGGING_SETTINGS, PID_PUMPS, LEVEL_SETTINGS, CV_SETTINGS, CAMERA_SETTINGS, CV2_BACKENDS, CaptureBackend, ImageFilterType
 from .file_interface import open_local, get_path
 from .pump_config import PumpNames, PumpConfig
+from .timer import Timer

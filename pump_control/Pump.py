@@ -58,6 +58,7 @@ class Pump(AsyncRunner,Teardown):
 
         self.state: SharedState[PumpState] = SharedState[PumpState]()
 
+        #TODO this is a hefty call in the UI thread - it can make the program appear to have frozen!
         self.__level: LevelSensor = LevelSensor()
         self.__pid: PIDRunner = PIDRunner(self.__level.state,
                                           self.__serial_interface,
@@ -165,9 +166,9 @@ class Pump(AsyncRunner,Teardown):
                 #         state_dict = {**state_dict, pidpmp: 0}
                 # self.state.set_value(ActiveState(state_dict))
                 pumps_to_stop = {pmpname for pmpname in pid_pumps if pmpname != identifier}
-                self.run_async(self.emergency_stop(pumps_to_stop))
+                self.run_sync(self.emergency_stop,args=(pumps_to_stop,))
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
-            self.run_async(self.__serial_interface.write(writestr))
+            self.run_sync(self.__serial_interface.write,args=(writestr,))
 
     def change_settings(self,modifications: dict[Settings,Any]):
         def _contains_any(lst1: Iterable, lst2: Iterable):
@@ -229,7 +230,7 @@ class Pump(AsyncRunner,Teardown):
         #TODO check race condition
         self.stop_event_loop()
 
-    async def emergency_stop(self,pumps: list[PumpNames]):
+    def emergency_stop(self,pumps: list[PumpNames]):
         """Stop all pumps. Since there is a mandatory delay between writes to the serial port, it is important to stop the pumps in the optimal order to minimise damage to the flow system. Pumps with high speeds are prioritised first. Within the high speed pumps, any pumps responsible for refilling the electrolyte reservoirs are handled first, followed by any electrolyte pumps. The low speed pumps are then handled in the same hierarchy"""
         
         try:
@@ -256,11 +257,11 @@ class Pump(AsyncRunner,Teardown):
             high_priority = []
         
         # now stop these pumps with order determined by pid system importance
-        await self.__stop_with_hierarchy(high_priority)
-        await self.__stop_with_hierarchy(low_priority)
+        self.__stop_with_hierarchy(high_priority)
+        self.__stop_with_hierarchy(low_priority)
         # self.state.set_value(ActiveState({pmpname:0 for pmpname in pumps}))
 
-    async def __stop_with_hierarchy(self,pumps: list[PumpNames]):
+    def __stop_with_hierarchy(self,pumps: list[PumpNames]):
         HIERARCHY = [Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP]
         important_pumps = self.__pid.get_pumps()
         high_priority: list[PumpNames] = []
@@ -273,26 +274,27 @@ class Pump(AsyncRunner,Teardown):
         
         # first loop through the high priority pumps (in their order of hierarchy):
         for hpp in high_priority:
-            await self.__close_without_error(hpp)
+            self.__close_without_error(hpp)
         
         # then do the low(er) priority pumps in any order
         for lpp in low_priority:
-            await self.__close_without_error(lpp)
+            self.__close_without_error(lpp)
 
     def _async_teardowns(self) -> Iterable[Coroutine[None, None, None]]:
         setout: set[Coroutine[None,None,None]] = set()
         # for pump in PumpNames:
             
         #     setout.add(self.__close_without_error(pump))
-        setout.add(self.emergency_stop(list(PumpConfig().pumps)))
+        # setout.add(self.emergency_stop(list(PumpConfig().pumps)))
         return setout
     
     def _sync_teardown(self) -> None:
+        self.emergency_stop(list(PumpConfig().pumps))
         self.__serial_interface.close()
 
-    async def __close_without_error(self,pmp: PumpNames):
+    def __close_without_error(self,pmp: PumpNames):
         try:
-            await self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
+            self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
             new_state = ActiveState({pmp:0})
             self.state.set_value(new_state)
         except InterfaceException:

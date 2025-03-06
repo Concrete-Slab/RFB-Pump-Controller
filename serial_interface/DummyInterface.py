@@ -1,6 +1,6 @@
 from .GenericInterface import InterfaceException
-from .SerialInterface import write_loop,read_loop,SerialInterface
-from support_classes import PumpConfig, SharedState
+from .SerialInterface import write_loop,read_loop,SerialInterface,_ThreadsafeAsyncEvent,SERIAL_WRITE_PAUSE,flush_write_buffer
+from support_classes import PumpConfig, SharedState, Timer
 import random
 import threading
 import queue
@@ -15,27 +15,33 @@ class DummyInterface(SerialInterface):
             super().__init__(port, baudrate, **kwargs)
         except InterfaceException:
             pass
-        self._SerialInterface__thread = threading.Thread(target = dummy_serial_loop, args = (num_pumps,self.port,self._SerialInterface__read_queue,self._SerialInterface__write_queue,self._SerialInterface__thread_alive,self._SerialInterface__thread_error))
+        self._thread = threading.Thread(target = dummy_serial_loop, args = (num_pumps,self.port,self._read_queue,self._write_queue,self._thread_alive,self._thread_error,self._data_available))
 
 
 
-def dummy_serial_loop(num_pumps: int, port, read_queue: queue.Queue[str], write_queue: queue.Queue[str], alive_event: threading.Event, error_state: SharedState[BaseException|None]):
+def dummy_serial_loop(num_pumps: int, port, read_queue: queue.Queue[str], write_queue: queue.Queue[str], alive_event: _ThreadsafeAsyncEvent, error_state: SharedState[BaseException|None], data_event: _ThreadsafeAsyncEvent):
     serial_inst = None
+    write_timer = Timer(SERIAL_WRITE_PAUSE)
     try:
-        serial_inst = DummySerial(num_pumps, port,timeout=0,baudrate=9600)
+        serial_inst = DummySerial(num_pumps,port,timeout=0,baudrate=9600)
         alive_event.set()
         while alive_event.is_set():
             ## WRITE TO PORT FROM QUEUE
-            write_loop(serial_inst,write_queue)
+            write_loop(serial_inst,write_queue,write_timer)
             ## READ FROM PORT TO QUEUE
             read_loop(serial_inst,read_queue)
+            ## NOTIFY IF NEW DATA
+            if not read_queue.empty():
+                data_event.set()
             time.sleep(0.1)
     except BaseException as e:
         error_state.set_value(e)
     finally:
         alive_event.clear()
+        flush_write_buffer(serial_inst,write_queue,write_timer)
         if serial_inst is not None:
             serial_inst.close()
+
 
 
 class DummySerial(Serial):
@@ -83,7 +89,6 @@ class DummySerial(Serial):
                 num_out = int(num_in - 50 + 100 * random.random())
             return str(num_out)
         outlst = [random_value(val) for val in self.applied_duties.values()]
-        outlst = ",".join(random_value)
         csv = ",".join(outlst)
         self.output = f"{csv}\n"
         self.output_pointer = 0
