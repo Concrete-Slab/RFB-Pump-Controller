@@ -1,3 +1,4 @@
+import queue
 from typing import Any, Coroutine, Iterable
 from serial_interface import GenericInterface, InterfaceException
 from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, PumpConfig, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
@@ -57,6 +58,7 @@ class Pump(AsyncRunner,Teardown):
         self.__serial_interface = serial_interface
 
         self.state: SharedState[PumpState] = SharedState[PumpState]()
+        self.queue: queue.Queue[PumpState] = queue.Queue()
 
         #TODO this is a hefty call in the UI thread - it can make the program appear to have frozen!
         self.__level: LevelSensor = LevelSensor()
@@ -77,13 +79,16 @@ class Pump(AsyncRunner,Teardown):
                 PumpConfig().generate_pumps(n_pumps)
                 settings = read_settings()
                 self.change_settings(settings)
-                self.state.set_value(ReadyState())
+                # self.state.set_value(ReadyState())
+                self.queue.put(ReadyState())
             except InterfaceException as e:
                 # Future completed with error: Assign error state to queue and close loop
-                self.state.set_value(ErrorState(e))
+                # self.state.set_value(ErrorState(e))
+                self.queue.put(ErrorState(e))
                 self.stop_event_loop()
             except:
-                self.state.set_value(ErrorState(BaseException("Unknown Error")))
+                self.queue.put(ErrorState(BaseException("Unknown Error")))
+                # self.state.set_value(ErrorState(BaseException("Unknown Error")))
                 self.stop_event_loop()
         
         self.run_async(self.__serial_interface.establish(), callback = on_established)
@@ -96,11 +101,12 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except (InterfaceException) as ie:
-            print("Pump detected an interface exception!")
-            self.state.set_value(ErrorState(ie))
+            # self.state.set_value(ErrorState(ie))
+            self.queue.put(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            self.state.set_value(ReadException(str(ge)))
+            # self.state.set_value(ReadException(str(ge)))
+            self.queue.put(ReadException(ge))
         finally:
             self.stop_pid()
 
@@ -116,10 +122,12 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except (InterfaceException) as ie:
-            self.state.set_value(ErrorState(ie))
+            # self.state.set_value(ErrorState(ie))
+            self.queue.put(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            self.state.set_value(ErrorState(PIDException(str(ge))))
+            # self.state.set_value(ErrorState(PIDException(str(ge))))
+            self.queue.put(ErrorState(PIDException(str(ge))))
         finally:
             self.stop_pid()
 
@@ -134,8 +142,8 @@ class Pump(AsyncRunner,Teardown):
         try:
             self.__level.set_vision_parameters(rect1, rect2, rect_ref, vol_ref)
         except ValueError as e:
-            print(e)
-            self.state.set_value(ErrorState(LevelException(str(e))))
+            # self.state.set_value(ErrorState(LevelException(str(e))))
+            self.queue.put(ErrorState(LevelException(str(e))))
         self.run_async(self.__level.generate(), callback = self.__levels_check_error)
         return (self.__level.is_running,self.__level.state)
 
@@ -143,10 +151,12 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except InterfaceException as ie:
-            self.state.set_value(ErrorState(ie))
+            # self.state.set_value(ErrorState(ie))
+            self.queue.put(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            self.state.set_value(ErrorState(LevelException(str(ge))))
+            # self.state.set_value(ErrorState(LevelException(str(ge))))
+            self.queue.put(ErrorState(LevelException(str(ge))))
         finally:
             self.stop_levels()
 
@@ -214,7 +224,8 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except GeneratorException as ge:
-            self.state.set_value(ErrorState(LoggerException(str(ge))))
+            # self.state.set_value(ErrorState(LoggerException(str(ge))))
+            self.queue.put(ErrorState(LoggerException(str(ge))))
         finally:
             self.stop_logging()
     
@@ -223,7 +234,6 @@ class Pump(AsyncRunner,Teardown):
         self.__logger.stop()
 
     def teardown(self):
-        # print("running teardown")
         self.stop_levels()
         self.stop_pid()
         self.stop_polling()
@@ -296,7 +306,7 @@ class Pump(AsyncRunner,Teardown):
         try:
             self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
             new_state = ActiveState({pmp:0})
-            self.state.set_value(new_state)
+            self.queue.put(new_state)
         except InterfaceException:
             pass
 

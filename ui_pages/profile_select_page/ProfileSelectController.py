@@ -116,13 +116,12 @@ class ProfileSelectController(UIController):
             def __on_response(state: PumpState):
                 if isinstance(state,ReadyState):
                     self.__remove_root_callbacks()
-                    #TODO remove and change
                     self._next_page(PumpController(pump))
                 elif isinstance(state,ErrorState):
                     self.notify_event(PSEvents.NotifyError(state.error))
                     self.__remove_root_callbacks()
                 
-            remove_queue_callback = self._add_state(pump.state,__on_response)
+            remove_queue_callback = self._add_queue(pump.queue,__on_response)
             self.__root_callbacks = self.__root_callbacks + [remove_queue_callback]
 
             pump.initialise(num_pumps)

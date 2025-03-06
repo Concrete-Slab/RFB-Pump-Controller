@@ -46,7 +46,7 @@ class ControllerPageController(UIController):
         self.add_listener(CEvents.StopAll,lambda event: self.pump.run_sync(self.pump.emergency_stop,args=([pmp for pmp in PumpConfig().pumps],)))
 
         # General state poll bindings
-        pump_state_remover = self._add_state(pump.state,self.__handle_pump_state)
+        pump_state_remover = self._add_queue(pump.queue,self.__handle_pump_state)
         self.__other_removal_callbacks.append(pump_state_remover)
 
         # begin reading the pump speeds

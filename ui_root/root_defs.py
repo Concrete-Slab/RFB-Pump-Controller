@@ -3,6 +3,7 @@ import customtkinter as ctk
 from typing import Callable,Any
 from support_classes import SharedState
 import threading
+import queue
 import copy
 from abc import ABC, abstractmethod
 
@@ -20,6 +21,9 @@ T = TypeVar("T")
 StateFunction = Callable[[T],None]
 def statecallback(stf: StateFunction) -> StateFunction:
     return stf
+Q = TypeVar("Q")
+QueueFunction = Callable[[Q],None]
+
 
 CallbackRemover = Callable[[],None]
 
@@ -29,6 +33,7 @@ class UIRoot(ctk.CTk):
         self.debug = debug
         self.__states: Dict[SharedState[Any],list[tuple[StateFunction[Any],bool]]] = {}
         self.__events: Dict[threading.Event, list[tuple[EventFunction,bool]]] = {}
+        self.__queues: Dict[queue.Queue[Any],list[tuple[QueueFunction,bool]]] = {}
         self.__page_hierarchy: list[Page] = []
         self._alert_boxes: list[AlertBox] = []
         self.__current_frame: ctk.CTkFrame|None = None
@@ -78,9 +83,28 @@ class UIRoot(ctk.CTk):
                 pass
         return __unregister_single
 
+    def register_queue(self, queue: queue.Queue[Q], callback: QueueFunction[Q], single_call = False) -> CallbackRemover:
+        new_tuple = (callback, single_call)
+        if queue in self.__queues.keys():
+            self.__queues[queue].append(new_tuple)
+        else:
+            self.__queues = {
+                **self.__queues,
+                queue: [new_tuple]
+            }
+        def __unregister_single(qu = queue, tp = new_tuple):
+            try:
+                self.__queues[qu].remove(tp)
+                if len(self.__queues[qu]) == 0:
+                    self.__states.pop(qu)
+            except (ValueError, IndexError,KeyError):
+                # warnings.warn(str(st.__hash__()) + " queue has already been removed")
+                pass
+        return __unregister_single
+
     # KEY PART: modify the event loop of tkinter to perform polling and event callbacks before updating the UI
     def __poll(self):
-        # run queue callbacks
+        # run state callbacks
         states_dict = copy.copy(self.__states)
         for sharedstate in states_dict.keys():
             val = sharedstate.get_value()
@@ -113,6 +137,22 @@ class UIRoot(ctk.CTk):
                 # clear the event
                 event.clear()
         del events_dict
+
+        # run queue callbacks
+        queues_dict = copy.copy(self.__queues)
+        for qu in queues_dict.keys():
+            while not qu.empty():
+                try:
+                    item = qu.get_nowait()
+                    for tup in queues_dict[qu]:
+                        tup[0](item)
+                        if tup[1]:
+                            self.__queues[qu].remove(tup)
+                            if len(self.__queues[qu])==0:
+                                self.__queues.pop(qu)
+                except queue.Empty:
+                    pass
+        del queues_dict
         self.after(POLL_REFRESH_TIME_MS,self.__poll)
 
     def __attach_frame(self,page_frame: ctk.CTkFrame) -> None:
