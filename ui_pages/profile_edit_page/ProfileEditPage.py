@@ -1,5 +1,6 @@
+from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Generic, TypeVar
 from PIL import Image
 import customtkinter as ctk
 from ui_root import UIController
@@ -39,16 +40,16 @@ class ProfileEditPage(ctk.CTkFrame):
         # ------- STATUS LABEL -------------------------------------------
 
         self._status_var = ctk.StringVar(value=self.DEFAULT_STATUS)
-        status_lbl = ctk.CTkLabel(self,textvariable=self._status_var)
+        self.status_lbl = ctk.CTkLabel(self,textvariable=self._status_var)
 
         # ------- NAME BOX -------------------------------------------
         name_lbl = ctk.CTkLabel(main_frame,text="Profile Name:")
         self.name_var = ctk.StringVar(value="")
         self.name_var.trace_add("write",self.__update_statuses)
         if not new_page:
-            profile_name_display = ctk.CTkLabel(main_frame,text="",textvariable=self.name_var)
+            self.profile_name_display = _NameLabel(main_frame,text="",textvariable=self.name_var)
         else:
-            profile_name_display = ctk.CTkEntry(
+            self.profile_name_display = _NameEntry(
                 main_frame,
                 textvariable=self.name_var,
                 justify="center",
@@ -102,7 +103,7 @@ class ProfileEditPage(ctk.CTkFrame):
 
         # ------- PUTTING IT ALL TOGETHER --------------------------
         name_lbl.grid(row=0,column=0,**ApplicationTheme.GRID_STD)
-        profile_name_display.grid(row=0,column=1,columnspan=2,**ApplicationTheme.GRID_STD)
+        self.profile_name_display.grid(row=0,column=1,columnspan=2,**ApplicationTheme.GRID_STD)
         serial_lbl.grid(row=1,column=0,**ApplicationTheme.GRID_STD)
         self._serial_dropdown.grid(row=1,column=1,**ApplicationTheme.GRID_STD)
         serial_refresh.grid(row=1,column=2,**ApplicationTheme.GRID_STD)
@@ -116,7 +117,7 @@ class ProfileEditPage(ctk.CTkFrame):
         
         main_frame.grid(row=1,column=0,columnspan=2,**ApplicationTheme.GRID_STD)
 
-        status_lbl.grid(row=0,column=0,columnspan=2,**ApplicationTheme.GRID_STD)
+        self.status_lbl.grid(row=0,column=0,columnspan=2,**ApplicationTheme.GRID_STD)
         self.confirm_button = ctk.CTkButton(self,text="Save",command=self.__confirm)
         cancel_button = ctk.CTkButton(self,text="Cancel",command=self.__cancel)
         cancel_button.grid(row=2,column=0,padx=10,pady=5,sticky="nsw")
@@ -139,6 +140,9 @@ class ProfileEditPage(ctk.CTkFrame):
 
     def __on_error(self, event: MEvents.Error):
         self._status_var.set(f"Error: {str(event.err)}")
+        if isinstance(event.err,ValueError):
+            self.profile_name_display.show_error()
+            self.status_lbl.configure(text_color=ApplicationTheme.ERROR_COLOR)
 
     def __on_generate(self):
         if not self.auto_pins.check_valid():
@@ -185,6 +189,9 @@ class ProfileEditPage(ctk.CTkFrame):
                 self.auto_frame.grid()
 
     def __update_statuses(self,*args):
+        # don't always check for name errors, so automatically clear them if the user types something
+        self.profile_name_display.clear_error()
+
         # initialisation
         confirm_state = self.confirm_button.cget("state")
         generate_state = self.generate_section.state
@@ -477,3 +484,24 @@ class _AutoWidgetGroup:
         self._lbl.grid_forget()
         self._pwm_entry.grid_forget()
         self._tacho_entry.grid_forget()
+
+_T = TypeVar("_T",bound=ctk.CTkBaseClass)
+class _NameWidget(Generic[_T],ABC):
+    @abstractmethod
+    def show_error(self):
+        raise NotImplementedError()
+    @abstractmethod
+    def clear_error(self):
+        raise NotImplementedError()
+    
+class _NameEntry(ctk.CTkEntry,_NameWidget[ctk.CTkEntry]):
+    def clear_error(self):
+        self.configure(border_color=ApplicationTheme.BORDER_COLOR)
+    def show_error(self):
+        self.configure(border_color=ApplicationTheme.ERROR_COLOR)
+
+class _NameLabel(ctk.CTkLabel,_NameWidget[ctk.CTkLabel]):
+    def clear_error(self):
+        self.configure(text_color=ApplicationTheme.WHITE)
+    def show_error(self):
+        self.configure(text_color=ApplicationTheme.ERROR_COLOR)

@@ -13,7 +13,7 @@ class ProfileManagerPage(ctk.CTkFrame):
         
         self.controller = controller
 
-        self.__profile_names = [None]
+        self.__profile_names = []
         
         
         self.__profiles_frame = ctk.CTkFrame(self)
@@ -23,10 +23,10 @@ class ProfileManagerPage(ctk.CTkFrame):
         self._status_var = ctk.StringVar(value="Edit, Delete, or Create a Profile")
         self._status_lbl = ctk.CTkLabel(self,textvariable=self._status_var)
 
-        name_lbl = ctk.CTkLabel(self.__profiles_frame,text="Profile Name")
-        option_lbl = ctk.CTkLabel(self.__profiles_frame,text="Options")
-        name_lbl.grid(row=0,column=0,**ApplicationTheme.GRID_STD)
-        option_lbl.grid(row=0,column=1,columnspan=2,**ApplicationTheme.GRID_STD)
+        self._name_lbl = ctk.CTkLabel(self.__profiles_frame,text="Profile Name")
+        self._option_lbl = ctk.CTkLabel(self.__profiles_frame,text="Options")
+        self._name_lbl.grid(row=0,column=0,**ApplicationTheme.GRID_STD)
+        self._option_lbl.grid(row=0,column=1,columnspan=2,**ApplicationTheme.GRID_STD)
 
         back_button = ctk.CTkButton(self,text="Back",command=lambda: self.controller.notify_event(PrEvents.Back()))
         new_button = ctk.CTkButton(self,text="New Profile",command=lambda: self.controller.notify_event(PrEvents.NewProfile()))
@@ -51,16 +51,25 @@ class ProfileManagerPage(ctk.CTkFrame):
 
     def __update_profiles(self, event: PrEvents.UpdateProfiles):
         new_profiles = event.profile_list
+        if set(self.__profile_names) != set(new_profiles):
+            for child in self.__profiles_frame.winfo_children():
+                if child != self._name_lbl and child!=self._option_lbl:
+                    child.grid_forget()
+            for i,profile_name in enumerate(new_profiles):
+                self.__create_profile_widget(profile_name,i+1)
+        
         if len(new_profiles)>0:
             self.__profiles_frame.rowconfigure(list(range(0,len(new_profiles))),weight=1,uniform="profiles")
         else:
+            self._name_lbl.grid_forget()
+            self._option_lbl.grid_forget()
+            if len(self.__profile_names)>0:
+                self.__profiles_frame.rowconfigure(list(range(1,len(self.__profile_names)+1)),weight=0)
             lbl = ctk.CTkLabel(self.__profiles_frame,text="No profiles found!")
             lbl.grid(row=0,column=0,columnspan=3,padx=0,pady=0,sticky="nsew")
+        self.__profile_names = new_profiles
         
-        if self.__profile_names != new_profiles:
-            self.__profile_names = new_profiles
-            for i,profile_name in enumerate(new_profiles):
-                self.__create_profile_widget(profile_name,i+1)
+        
 
     def __create_profile_widget(self,profile_name,rownum):
         lbl = ctk.CTkLabel(self.__profiles_frame, text=profile_name)
