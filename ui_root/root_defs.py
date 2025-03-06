@@ -140,6 +140,15 @@ class UIRoot(ctk.CTk):
         self.__page_hierarchy.append(page)
         page_frame = page.create(self)
         self.__attach_frame(page_frame)
+
+    def back_custom(self, page: "Page"):
+        if len(self.__page_hierarchy)>0:
+            # remove top page
+            self.__page_hierarchy.pop()
+        if len(self.__page_hierarchy)>0:
+            # remove second to top page
+            self.__page_hierarchy.pop()
+        self.switch_page(page)
         
 
     def destroy(self):

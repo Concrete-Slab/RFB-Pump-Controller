@@ -38,6 +38,9 @@ class UIController:
     def _next_page(self,page: Page):
         self.__root.switch_page(page)
 
+    def _back_custom(self,page: Page):
+        self.__root.back_custom(page)
+
     def _add_event(self, event: Event, callback: EventFunction,single_call=False) -> CallbackRemover:
         return self.__root.register_event(event,callback,single_call=single_call)
     
