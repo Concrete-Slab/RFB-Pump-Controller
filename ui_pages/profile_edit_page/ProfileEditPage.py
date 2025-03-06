@@ -115,13 +115,13 @@ class ProfileEditPage(ctk.CTkFrame):
         self.manual_frame.grid(row=3,column=0,columnspan=3,**ApplicationTheme.GRID_BOX)
         self.manual_frame.grid_remove()
         
-        main_frame.grid(row=1,column=0,columnspan=2,**ApplicationTheme.GRID_STD)
+        main_frame.grid(row=1,column=0,columnspan=3,**ApplicationTheme.GRID_STD)
 
         self.status_lbl.grid(row=0,column=0,columnspan=2,**ApplicationTheme.GRID_STD)
         self.confirm_button = ctk.CTkButton(self,text="Save",command=self.__confirm)
         cancel_button = ctk.CTkButton(self,text="Cancel",command=self.__cancel)
         cancel_button.grid(row=2,column=0,padx=10,pady=5,sticky="nsw")
-        self.confirm_button.grid(row=2,column=1,padx=10,pady=5,sticky="nse")
+        self.confirm_button.grid(row=2,column=2,padx=10,pady=5,sticky="nse")
 
 
         self.controller.add_listener(MEvents.UpdatePorts,self.__update_ports)
