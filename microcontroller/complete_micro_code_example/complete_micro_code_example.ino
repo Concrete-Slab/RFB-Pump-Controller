@@ -51,6 +51,7 @@ class PumpConnection{
 };
 
 unsigned long recentMillis = 0;
+// begin codegen lines
 const unsigned int numPumps = 2;
 PumpConnection pumps[2] = {PumpConnection(10,17,'a'),PumpConnection(11,18,'b')};
 
@@ -67,7 +68,7 @@ void sendSpeed(int i, long rpm){
     Serial.print(',');
   }
 }
-
+// end codegen lines
 bool modified[numPumps];
 
 int nameIndex(char name){
