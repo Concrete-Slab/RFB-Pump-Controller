@@ -70,7 +70,7 @@ class AsyncRunner(ABC):
             self.__loop.call_soon_threadsafe(callable,*args)
             #
         except Exception as e:
-            print(e)
+            raise e
     
     def stop_event_loop(self, now=False):
 

@@ -100,7 +100,6 @@ class FileCapture(Capture):
         self._i = 0
     def get_image(self, rescale: bool = True) -> ndarray:
         img = np.array(Image.open(self.image_names[self._i]))
-        print(img.shape)
         self._i +=1
         return img
     def close(self):
@@ -280,10 +279,9 @@ class PygameCapture(Capture):
                 img = cv2.resize(img,(int(imshape[1]*self._scale_factor),int(imshape[0]*self._scale_factor)))
             return img
         except (RuntimeError,pg.error):
-            print("Failed to take image")
             raise CaptureException("Failed to take image")
         except Exception as e:
-            print(e)
+            raise e
         
 
     @staticmethod

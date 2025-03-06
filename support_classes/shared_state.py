@@ -59,7 +59,6 @@ class MPSharedState(Generic[T]):
         with self.value as v:
             v[0] = value
             self._event.set()
-            print("setting value", value)
 
     def get_value(self) -> T | None:
         with self.value as v:

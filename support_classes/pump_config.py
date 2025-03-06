@@ -33,10 +33,3 @@ class PumpConfig:
         if self._pumps is None:
             raise RuntimeError("Pumps have not been generated yet")
         return self._pumps
-
-if __name__ == "__main__":
-    PumpConfig().generate_pumps(1)
-    print(isinstance(list(PumpConfig().pumps)[0],PumpNames))
-    for item in PumpConfig().pumps:
-        print(item)
-        print(isinstance(item,PumpNames))

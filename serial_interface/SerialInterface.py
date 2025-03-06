@@ -131,7 +131,7 @@ def write_loop(serial_inst: Serial, write_queue: queue.Queue[str], write_timer: 
         if command != "":
             serial_inst.write(command.encode())
             serial_inst.reset_output_buffer()
-            print(f"Writing {command}")
+            # print(f"Writing {command}")
             time.sleep(SERIAL_WRITE_PAUSE)
         nextqueue = nextqueue.removeprefix(command)
         if get_first_command(nextqueue) != "":
