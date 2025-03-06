@@ -43,6 +43,7 @@ class AsyncRunner(ABC):
         
 
     def run_async(self, coroutine: Coroutine[Any,Any,T], callback: Callable[[Future[T]],None] | list[Callable[[Future[T]],None]] = None) -> Future[T]:
+        """Calls an asyncronous function (coroutine) in the event loop thread."""
         # Returns a future:
         # Assign a callback on completion for the calling thread with asyncio.Future.add_done_callback()
         try:
@@ -64,6 +65,7 @@ class AsyncRunner(ABC):
             raise e
         
     def run_sync(self, callable: Callable[[None],Any], args: Iterable[Any] = None):
+        """Used to call a *synchronous* function in the event loop thread. Stops the UI thread from being blocked."""
         try:
             self.__loop.call_soon_threadsafe(callable,*args)
             #
