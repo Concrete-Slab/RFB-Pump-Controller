@@ -1,3 +1,73 @@
+
+#include <math.h>
+#define startChar '<'
+#define endChar '>'
+#define serialWritePeriod 1000
+#define loopdelay 10
+
+typedef void (*ISRPointer)();
+
+class PumpConnection{
+  private:
+    ISRPointer _isrWrapper;
+    volatile unsigned int _rotationCount;
+  public:
+    const unsigned int pwm;
+    const int tacho; // tacho<0 if pump does not have a tachometer
+    const char name;
+    unsigned int duty = 0;
+    unsigned int speed = 0;
+    PumpConnection(unsigned int pwm_pin, int tacho_pin, char pump_name) : pwm(pwm_pin), tacho(tacho_pin), name(pump_name){}
+
+    void isr(){
+      _rotationCount += 1;
+    }
+    void initialise(ISRPointer isrWrapper){
+      pinMode(pwm,OUTPUT);
+      pinMode(tacho,INPUT);
+      analogWrite(pwm,0);
+      this->_isrWrapper = isrWrapper;
+      attach_isr();
+    }
+    bool hasTacho() const {
+      return (tacho>=0);
+    }
+    unsigned int rotationCount() const {
+      return _rotationCount;
+    }
+    void resetCount(){
+      _rotationCount = 0;
+    }
+    void attach_isr(){
+      if (hasTacho() && _isrWrapper){
+        attachInterrupt(digitalPinToInterrupt(tacho), _isrWrapper, FALLING);
+      }
+    }
+    void detach_isr(){
+      if (hasTacho()){
+        detachInterrupt(digitalPinToInterrupt(tacho));
+      }
+    }
+};
+
+unsigned long recentMillis = 0;
+const unsigned int numPumps = 2;
+PumpConnection pumps[2] = {PumpConnection(10,17,'a'),PumpConnection(11,18,'b')};
+
+void ISR_0(){ pumps[0].isr(); }
+void ISR_1(){ pumps[1].isr(); }
+
+ISRPointer isrFuns[numPumps] = {*ISR_0,*ISR_1};
+
+void sendSpeed(int i, long rpm){
+  //This is the comma separated values method!
+  Serial.print(rpm);
+  // if last pump, don't include comma!
+  if (i<numPumps-1){
+    Serial.print(',');
+  }
+}
+
 bool modified[numPumps];
 
 int nameIndex(char name){
