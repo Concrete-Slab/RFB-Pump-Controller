@@ -7,7 +7,7 @@ from support_classes import SharedState
 import time
 
 SERIAL_WRITE_PAUSE = 2
-"""Seconds until a subsequent write command is sent. Allows the Teensyduino controller some processing time"""
+"""Seconds until a subsequent write command is sent. Allows the microcontroller some processing time"""
 
 class SerialInterface(GenericInterface):
 
