@@ -67,8 +67,6 @@ void performCommands(){
   // write duty to the pwm pin for each PumpConnection
   for (int i = 0; i<numPumps; i++){
     if (modified[i]){
-      Serial.print("Writing!|");
-      Serial.println(pumps[i].duty);
       // pump duty has been modified, so it needs writing
       PumpConnection& pmp = pumps[i];
       // write the pump's duty to the pump's pwm pin

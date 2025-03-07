@@ -36,7 +36,7 @@ class NewProfilePageController(UIController):
                 event.name,
                 event.serial_port,
                 event.serial_port == DUMMY_PORT,
-                [PinDefs.from_tuple(tp) for tp in event.pin_assignments],
+                event.pin_assignments,
                 code_location=event.code_location
             )
         return MicrocontrollerProfile(
@@ -56,7 +56,7 @@ class NewProfilePageController(UIController):
 
     def _generate_code(self,event: MEvents.GenerateCode):
         try:
-            pwd = maybe_generate_code(event.name,[PinDefs.from_tuple(tp)for tp in event.pin_assignments])
+            pwd = maybe_generate_code(event.name,event.pin_assignments)
             ## open file explorer/finder/equivalent
             if platform.system() == "Windows":
                 subprocess.run(["explorer.exe", "/select,", str(pwd)])
@@ -85,7 +85,7 @@ class ProfileEditPageController(NewProfilePageController):
             return MEvents.UpdateAutoprofile(
                 self.__profile.profile_name,
                 self.__profile.serial_port,
-                [pa.as_tuple() for pa in self.__profile.pin_assignments],
+                self.__profile.pin_assignments,
                 code_location=self.__profile.code_location,
             )
         return MEvents.UpdateManualProfile(
@@ -105,7 +105,7 @@ class ProfileEditPageController(NewProfilePageController):
             #     compareto = self.__profile.pin_assignments
             # else:
             #     compareto = None
-            pwd = maybe_generate_code(event.name,[PinDefs.from_tuple(tp)for tp in event.pin_assignments])
+            pwd = maybe_generate_code(event.name,event.pin_assignments)
             ## open file explorer/finder/equivalent
             if platform.system() == "Windows":
                 subprocess.run(["explorer.exe", "/select,", str(pwd)])

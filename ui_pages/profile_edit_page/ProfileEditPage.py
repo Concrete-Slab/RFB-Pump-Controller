@@ -7,6 +7,7 @@ from ui_root import UIController
 from .PROFILE_EDIT_EVENTS import MEvents
 from ui_pages.ui_widgets import ApplicationTheme
 from enum import Enum
+from microcontroller import PinDefs
 
 class _ProfileMode(Enum):
     AUTO = "Generate code"
@@ -230,7 +231,6 @@ class ProfileEditPage(ctk.CTkFrame):
 
         self._serial_dropdown.configure(values=self.__serial_display,require_redraw=True)
 
-
     def __confirm(self):
         serial_port = self.selected_port
         if serial_port == self.DEFAULT_PORT_PROMPT:
@@ -335,6 +335,9 @@ class _AutoFrame(ctk.CTkFrame):
     _TACHO_TEXT = "Tacho Pin"
     _PWM_TEXT = "Duty Pin"
 
+    _TACHO_COLUMN = 2
+    _PWM_COLUMN = 1
+
     def __init__(self, master: ctk.CTkFrame, allowable_pump_names: list[str], add_remove_command: Callable[[None],None] = lambda: None):
         super().__init__(master, bg_color = master.cget("bg_color"), corner_radius=0)
 
@@ -359,8 +362,8 @@ class _AutoFrame(ctk.CTkFrame):
         tacho_lbl = ctk.CTkLabel(self,text=self._TACHO_TEXT)
         pwm_lbl = ctk.CTkLabel(self,text=self._PWM_TEXT)
         pmp_lbl.grid(row=0,column=0,**ApplicationTheme.GRID_STD)
-        tacho_lbl.grid(row=0,column=1,**ApplicationTheme.GRID_STD)
-        pwm_lbl.grid(row=0,column=2,**ApplicationTheme.GRID_STD)
+        tacho_lbl.grid(row=0,column=_AutoFrame._TACHO_COLUMN,**ApplicationTheme.GRID_STD)
+        pwm_lbl.grid(row=0,column=_AutoFrame._PWM_COLUMN,**ApplicationTheme.GRID_STD)
         self._regrid()
 
     def _regrid(self):
@@ -411,7 +414,7 @@ class _AutoFrame(ctk.CTkFrame):
         return [w.pins for w in self.widget_list]
     
     @values.setter
-    def values(self, new_values: list[tuple[int,int]]):
+    def values(self, new_values: list[PinDefs]):
         self.widget_list = [_AutoWidgetGroup(self,self._names[i]) for i in range(0,len(new_values))]
 
         for i in range(0,len(new_values)):
@@ -464,21 +467,28 @@ class _AutoWidgetGroup:
         return pin_validator(self.pwm_var.get(),allow_empty=False) and pin_validator(self.tacho_var.get(),allow_empty=False)
 
     @property
-    def pins(self) -> tuple[int,int]:
-        if self.check_ready:
+    def pins(self) -> PinDefs:
+        if self.check_ready():
             # format is [tacho,pwm]!!!!!!!!!
-            return (int(self.tacho_var.get()),int(self.pwm_var.get()))
+            # return (int(self.tacho_var.get()),int(self.pwm_var.get()))
+            pwm_pin = int(self.pwm_var.get())
+            tacho_val = self.tacho_var.get()
+            tacho_pin = int(tacho_val) if pin_validator(tacho_val,allow_empty=False) else -1
+            return PinDefs(tacho_pin,pwm_pin)
         raise ValueError("PWM and/or tacho entries have invalid inputs")
     
     @pins.setter
-    def pins(self,new_value: tuple[int,int]):
-        self.tacho_var.set(str(new_value[0]))
-        self.pwm_var.set(str(new_value[1]))
+    def pins(self,new_value: PinDefs):
+        if new_value.tacho_pin<0:
+            self.tacho_var.set("")
+        else:
+            self.tacho_var.set(str(new_value.tacho_pin))
+        self.pwm_var.set(str(new_value.pwm_pin))
     
     def grid(self,row):
         self._lbl.grid(row=row,column=0,**ApplicationTheme.GRID_STD)
-        self._pwm_entry.grid(row=row,column=1,**ApplicationTheme.GRID_STD)
-        self._tacho_entry.grid(row=row,column=2,**ApplicationTheme.GRID_STD)
+        self._pwm_entry.grid(row=row,column=_AutoFrame._PWM_COLUMN,**ApplicationTheme.GRID_STD)
+        self._tacho_entry.grid(row=row,column=_AutoFrame._TACHO_COLUMN,**ApplicationTheme.GRID_STD)
     
     def grid_forget(self):
         self._lbl.grid_forget()

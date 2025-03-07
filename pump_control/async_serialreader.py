@@ -1,8 +1,9 @@
 from support_classes import Generator, PumpNames, PumpConfig, Timer
 from serial_interface import GenericInterface, InterfaceException
+from microcontroller import SpeedFormats
 import asyncio
 
-MINIMUM_POLL_TIME = 1.0
+MINIMUM_POLL_TIME = 0.5
 MAXIMUM_POLL_TIME = 4.0
 
 SpeedReading = dict[PumpNames,float]
@@ -25,12 +26,19 @@ class SerialReader(Generator[SpeedReading|None]):
                 # conversely, one can also put a timeout on buffer reading to be set, guarding against slow/no readings
                 new_line = await asyncio.wait_for(self.__serial_interface.readbuffer(),MAXIMUM_POLL_TIME)
             self.__timer.reset()
-            new_speeds = list(map(float,new_line.split(",")))
-            if len(new_speeds)<len(PumpConfig().pumps):
-                additional_speeds = [0.0]*(len(PumpConfig().pumps)-len(new_speeds))
-                new_speeds = [*new_speeds,*additional_speeds]
-            new_dict: SpeedReading = dict(zip(PumpConfig().pumps,new_speeds))
-            return new_dict
+
+            if "<" in new_line:
+                fmt = SpeedFormats.NAME_VALUE
+            else:
+                fmt = SpeedFormats.COMMA_SEPARATED
+
+            match fmt:
+                case SpeedFormats.COMMA_SEPARATED:
+                    return _extract_comma_separated(new_line)
+                case SpeedFormats.NAME_VALUE:
+                    return _extract_name_value(new_line)
+            return None
+                        
         except (TimeoutError,ValueError):
             return None
         except InterfaceException:
@@ -38,3 +46,18 @@ class SerialReader(Generator[SpeedReading|None]):
 
     def teardown(self):
         pass
+
+
+def _extract_comma_separated(serial_text: str) -> SpeedReading:
+    new_speeds = list(map(float,serial_text.split(",")))
+    if len(new_speeds)<len(PumpConfig().pumps):
+        additional_speeds = [0.0]*(len(PumpConfig().pumps)-len(new_speeds))
+        new_speeds = [*new_speeds,*additional_speeds]
+    new_dict: SpeedReading = dict(zip(PumpConfig().pumps,new_speeds))
+    return new_dict
+
+def _extract_name_value(serial_text: str) -> SpeedReading:
+    serial_text.removeprefix("<")
+    serial_text.removesuffix(">")
+    dict_out = {PumpNames(command[0].upper()):float(command[1]) for command in serial_text.split("><")}
+    return dict_out

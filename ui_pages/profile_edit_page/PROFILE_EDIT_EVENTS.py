@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from ui_root import event_group
+from microcontroller import PinDefs
 
 @event_group
 class MEvents:
@@ -24,7 +25,7 @@ class MEvents:
     class UpdateAutoprofile:
         name: str
         serial_port: str
-        pin_assignments: list[tuple[int,int]]
+        pin_assignments: list[PinDefs]
         code_location: str|None = None
         device_name: str|None = None
     @dataclass
@@ -38,14 +39,14 @@ class MEvents:
         """Signals the user wishes to save the current auto-coded profile and return"""
         name: str
         serial_port: str
-        pin_assignments: list[tuple[int,int]]
+        pin_assignments: list[PinDefs]
         code_location: str|None = None
         device_name: str|None = None
     @dataclass
     class GenerateCode:
         """Signals the user wishes to generate code based on pin assignments and profile name"""
         name: str
-        pin_assignments: list[tuple[int,int]]
+        pin_assignments: list[PinDefs]
     @dataclass
     class NotifyGenerated:
         "Notifies that code has been generated and provides its filepath"

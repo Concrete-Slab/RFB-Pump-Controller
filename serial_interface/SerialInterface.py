@@ -123,6 +123,7 @@ def write_loop(serial_inst: Serial, write_queue: queue.Queue[str], write_timer: 
     # Sometimes, the microcontroller may not be able to process a flood of write commands, so SERIAL_WRITE_PAUSE is used to implement a minimum time between writes.
     # Instead of using time.sleep(SERIAL_WRITE_PAUSE), which would block the thread (e.g. from reading speeds), this allows writes to be conditioned on elapsing SERIAL_WRITE_PAUSE since the previous write.
     if newwrite and write_timer.check():
+        write_timer.reset()
         nextqueue = write_queue.get()
         command = get_first_command(nextqueue)
         nextqueue = nextqueue.removeprefix(command)
@@ -131,8 +132,6 @@ def write_loop(serial_inst: Serial, write_queue: queue.Queue[str], write_timer: 
         if command != "":
             serial_inst.write(command.encode())
             serial_inst.reset_output_buffer()
-            # print(f"Writing {command}")
-            time.sleep(SERIAL_WRITE_PAUSE)
         nextqueue = nextqueue.removeprefix(command)
         if get_first_command(nextqueue) != "":
             write_queue.put(nextqueue)

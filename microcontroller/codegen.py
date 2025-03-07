@@ -47,6 +47,13 @@ def generate_code(name: str, pump_list: list[PinDefs], spd_format: SpeedFormats 
     ISR_array_inner = "*"+",*".join(ISR_funs.keys())
     ISR_array = f"ISRPointer isrFuns[numPumps] = {{{ISR_array_inner}}};"
 
+    # if some pumps don't have speed readings, then use <name,value> speed reporting to be sure which speeds are for which pump
+    if spd_format == SpeedFormats.COMMA_SEPARATED:
+        for pindef in pump_list:
+            if pindef.tacho_pin<0:
+                spd_format = SpeedFormats.NAME_VALUE
+                break
+
     match spd_format:
         case SpeedFormats.COMMA_SEPARATED:
             spd_filename = COMMA_SEPARATED_FUNCTION_PATH
