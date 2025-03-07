@@ -59,5 +59,5 @@ def _extract_comma_separated(serial_text: str) -> SpeedReading:
 def _extract_name_value(serial_text: str) -> SpeedReading:
     serial_text.removeprefix("<")
     serial_text.removesuffix(">")
-    dict_out = {PumpNames(command[0].upper()):float(command[1]) for command in serial_text.split("><")}
+    dict_out = {PumpConfig().pumps(command[0].upper()):float(command[1]) for command in serial_text.split("><")}
     return dict_out
