@@ -454,7 +454,7 @@ class _AutoWidgetGroup:
         pwm = pin_validator(self.pwm_var.get(),allow_empty=False)
         pwm_color = ApplicationTheme.BORDER_COLOR if pwm else ApplicationTheme.ERROR_COLOR
 
-        tacho = pin_validator(self.tacho_var.get(),allow_empty=False)
+        tacho = pin_validator(self.tacho_var.get(),allow_empty=True)
         tacho_color = ApplicationTheme.BORDER_COLOR if tacho else ApplicationTheme.ERROR_COLOR
 
         self._pwm_entry.configure(border_color=pwm_color)
@@ -464,7 +464,7 @@ class _AutoWidgetGroup:
 
     @property
     def is_ready(self) -> bool:
-        return pin_validator(self.pwm_var.get(),allow_empty=False) and pin_validator(self.tacho_var.get(),allow_empty=False)
+        return pin_validator(self.pwm_var.get(),allow_empty=False) and pin_validator(self.tacho_var.get(),allow_empty=True)
 
     @property
     def pins(self) -> PinDefs:
