@@ -91,7 +91,7 @@ class ProfileSelectController(UIController):
         new_list = read_profiles(self.debug)
         if new_list != self.__current_profiles:
             self.__current_profiles = new_list
-        if prev_profile not in new_list:
+        if prev_profile not in [p.profile_name for p in new_list]:
             prev_profile = None
         self.notify_event(PSEvents.UpdateProfiles([p.profile_name for p in self.__current_profiles],prev_profile))
 
