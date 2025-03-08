@@ -542,9 +542,9 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         camera_frame = segment_frames[0]
         cv_frame = segment_frames[1]
         
-        self.rescale_var = _make_and_grid(_make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,1,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
+        self.rescale_var = _make_and_grid(_make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,0,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
         # self.save_period_var = _make_and_grid(_make_entry, camera_frame, "Period Between Image Saves", Settings.IMAGE_SAVE_PERIOD, prev_period, 2, map_fun=float, entry_validator = _validate_time_float, on_return = self.__confirm_selections, units="s")
-        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,3,values=Capture.SUPPORTED_INTERFACES)
+        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,1,values=Capture.SUPPORTED_INTERFACES)
         self.interface_var.trace_add(self.__interface_changed)
 
         self.sense_period_var = _make_and_grid(_make_entry,cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),1,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
