@@ -27,3 +27,8 @@ class PSEvents:
     class NotifyError:
         """An error has occurred"""
         err: BaseException
+
+    @dataclass
+    class NotifyInfo:
+        """Information received about loading status"""
+        info: str

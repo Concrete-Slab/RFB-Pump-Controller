@@ -233,6 +233,7 @@ class ProfileSelectPage(ctk.CTkFrame):
 
         self.UIcontroller.add_listener(PSEvents.UpdateProfiles, self.__update_profiles)
         self.UIcontroller.add_listener(PSEvents.NotifyError, self.__on_error)
+        self.UIcontroller.add_listener(PSEvents.NotifyInfo,self.__on_info)
 
         self.UIcontroller.notify_event(PSEvents.RequestProfiles())
 
@@ -261,6 +262,10 @@ class ProfileSelectPage(ctk.CTkFrame):
         self._new_button.configure(state=ctk.NORMAL)
         self._micro_dropdown.configure(state=ctk.NORMAL)
         pass
+
+    def __on_info(self, event: PSEvents.NotifyInfo):
+        self._status_lbl.configure(text_color=ApplicationTheme.WHITE)
+        self._status_var.set(f"{event.info}...")
 
 
     def __send_config(self):

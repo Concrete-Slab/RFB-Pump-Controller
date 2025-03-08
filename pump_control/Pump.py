@@ -19,9 +19,20 @@ def _ignore_attrerror(fun):
             pass
     return inner
 
+def _inform_attrerror(fun):
+    def inner(self: "Pump", *args,**kwargs):
+        try:
+            return fun(self,*args,**kwargs)
+        except AttributeError as ae:
+            self.queue.put(ErrorState(ae))
+    return inner
 
 class PumpState(ABC):
     pass
+
+class LoadingState(PumpState):
+    def __init__(self, info: str):
+        self.info = info
 
 class ReadyState(PumpState):
     def __init__(self) -> None:
@@ -52,6 +63,8 @@ class LoggerException(BaseException):
 
 class Pump(AsyncRunner,Teardown):
 
+    
+
     def __init__(self, serial_interface: GenericInterface, **kwargs) -> None:
         super().__init__()
 
@@ -61,13 +74,18 @@ class Pump(AsyncRunner,Teardown):
         self.queue: queue.Queue[PumpState] = queue.Queue()
 
         #TODO this is a hefty call in the UI thread - it can make the program appear to have frozen!
-        self.__level: LevelSensor = LevelSensor()
-        self.__pid: PIDRunner = PIDRunner(self.__level.state,
-                                          self.__serial_interface,
-                                          self.__level.sensed_event,
-                                          )
-        self.__poller: SerialReader = SerialReader(self.__serial_interface)
-        self.__logger: DataLogger = DataLogger(self.__poller.state,self.__pid.state,self.__level.state)
+        # self.__level: LevelSensor = LevelSensor()
+        # self.__pid: PIDRunner = PIDRunner(self.__level.state,
+        #                                   self.__serial_interface,
+        #                                   self.__level.sensed_event,
+        #                                   )
+        # self.__poller: SerialReader = SerialReader(self.__serial_interface)
+        # self.__logger: DataLogger = DataLogger(self.__poller.state,self.__pid.state,self.__level.state)
+
+        # self.__level: LevelSensor|None = None
+        # self.__pid: PIDRunner|None = None
+        # self.__poller: SerialReader|None = None
+        # self.__logger: DataLogger|None = None
         
 
 
@@ -91,8 +109,22 @@ class Pump(AsyncRunner,Teardown):
                 # self.state.set_value(ErrorState(BaseException("Unknown Error")))
                 self.stop_event_loop()
         
-        self.run_async(self.__serial_interface.establish(), callback = on_established)
+        self.run_async(self.__establish(), callback = on_established)
 
+    async def __establish(self):
+        self.queue.put("Establishing Serial Connection")
+        await self.__serial_interface.establish()
+        self.queue.put(LoadingState("Loading Level Sensor"))
+        self.__level = LevelSensor()
+        self.queue.put(LoadingState("Loading PID Controller"))
+        self.__pid = PIDRunner(self.__level.state,
+                               self.__serial_interface,
+                               self.__level.sensed_event)
+        self.__poller = SerialReader(self.__serial_interface)
+        self.__logger = DataLogger(self.__poller.state,self.__pid.state,self.__level.state)
+
+
+    @_inform_attrerror
     def start_polling(self) -> tuple[SharedState[bool],SharedState[SpeedReading]]:
         self.run_async(self.__poller.generate(), callback = self.__polling_check_error)
         return (self.__poller.is_running,self.__poller.state)
@@ -114,6 +146,7 @@ class Pump(AsyncRunner,Teardown):
     def stop_polling(self):
         self.__poller.stop()
         
+    @_inform_attrerror
     def start_pid(self) -> tuple[SharedState[bool],SharedState[Duties]]:
         self.run_async(self.__pid.generate(), callback = self.__pid_check_error)
         return (self.__pid.is_running, self.__pid.state)
@@ -135,9 +168,11 @@ class Pump(AsyncRunner,Teardown):
     def stop_pid(self):
         self.__pid.stop()
 
+    @_inform_attrerror
     def levels_ready(self):
         return self.__level.is_ready()
 
+    @_inform_attrerror
     def start_levels(self, rect1: Rect, rect2: Rect, rect_ref: Rect, vol_ref: float) -> tuple[SharedState[bool],SharedState[LevelOutput]]:
         try:
             self.__level.set_vision_parameters(rect1, rect2, rect_ref, vol_ref)
@@ -164,6 +199,7 @@ class Pump(AsyncRunner,Teardown):
     def stop_levels(self):
         self.__level.stop()
 
+    @_inform_attrerror
     def manual_set_duty(self,identifier: PumpNames, new_duty: int):
         if is_duty(new_duty):
             pid_pumps = [pmp for pmp in self.__pid.get_pumps().values() if pmp is not None]
@@ -180,6 +216,7 @@ class Pump(AsyncRunner,Teardown):
             writestr = GenericInterface.format_duty(identifier.value,new_duty)
             self.run_sync(self.__serial_interface.write,args=(writestr,))
 
+    @_inform_attrerror
     def change_settings(self,modifications: dict[Settings,Any]):
         def _contains_any(lst1: Iterable, lst2: Iterable):
             for item in lst1:
@@ -217,6 +254,7 @@ class Pump(AsyncRunner,Teardown):
             logger_mods = {key:modifications[key] for key in modified_keys if key in LOGGING_SETTINGS}
             self.run_sync(self.__logger.set_parameters,args=(logger_mods,))
 
+    @_inform_attrerror
     def start_logging(self):
         self.run_async(self.__logger.generate(),callback=self.__logger_check_error)
         return self.__logger.is_running
@@ -240,6 +278,7 @@ class Pump(AsyncRunner,Teardown):
         #TODO check race condition
         self.stop_event_loop()
 
+    @_ignore_attrerror
     def emergency_stop(self,pumps: list[PumpNames]):
         """Stop all pumps. Since there is a mandatory delay between writes to the serial port, it is important to stop the pumps in the optimal order to minimise damage to the flow system. Pumps with high speeds are prioritised first. Within the high speed pumps, any pumps responsible for refilling the electrolyte reservoirs are handled first, followed by any electrolyte pumps. The low speed pumps are then handled in the same hierarchy"""
         

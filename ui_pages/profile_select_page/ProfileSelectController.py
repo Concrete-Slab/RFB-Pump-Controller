@@ -1,7 +1,7 @@
 from serial_interface import GenericInterface, InterfaceException, DummyInterface, SerialInterface
 from support_classes.settings_interface import Settings, modify_settings, read_setting
 from ui_root import UIRoot, UIController
-from pump_control import Pump, PumpState, ErrorState, ReadyState
+from pump_control import Pump, PumpState, ErrorState, ReadyState, LoadingState
 from .PROFILE_SELECT_EVENTS import PSEvents
 from microcontroller import MicrocontrollerProfile, read_profiles
 from ui_pages import ProfileManager, PumpController
@@ -120,6 +120,8 @@ class ProfileSelectController(UIController):
                 elif isinstance(state,ErrorState):
                     self.notify_event(PSEvents.NotifyError(state.error))
                     self.__remove_root_callbacks()
+                elif isinstance(state,LoadingState):
+                    self.notify_event(PSEvents.NotifyInfo(state.info))
                 
             remove_queue_callback = self._add_queue(pump.queue,__on_response)
             self.__root_callbacks = self.__root_callbacks + [remove_queue_callback]
