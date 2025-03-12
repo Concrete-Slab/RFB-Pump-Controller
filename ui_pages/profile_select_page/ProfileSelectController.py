@@ -150,7 +150,7 @@ class ProfileSelectController(UIController):
         if port not in GenericInterface.get_serial_ports(debug = False)[0]:
             if port in GenericInterface.get_serial_ports(debug=True)[0]:
                 return True
-            raise InterfaceException("Serial Port Not Found")
+            raise InterfaceException(f"""Port "{profile.serial_port}" could not be found""")
         return False
         
     

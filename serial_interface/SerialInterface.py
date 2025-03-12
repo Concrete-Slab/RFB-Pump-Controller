@@ -47,7 +47,7 @@ class SerialInterface(GenericInterface):
         self._thread = threading.Thread(target = serial_loop, args = (self.port,self._read_queue,self._write_queue,self._thread_alive,self._thread_error,self._data_available))
         port_desc = GenericInterface.get_serial_ports()
         if port not in port_desc[0]:
-            raise InterfaceException("Serial port not found")
+            raise InterfaceException(f"""Port "{self.port}" could not be found""")
 
     async def establish(self):
         # attach event loop to threadsafe events
@@ -66,7 +66,8 @@ class SerialInterface(GenericInterface):
             if not successful_start:
                 self._thread_alive.clear()
                 self._thread.join()
-                raise InterfaceException("Serial port not found")
+                errtxt = f"""Could not connect to port "{self.port}".""" if self.port in GenericInterface.get_serial_ports()[0] else f"""Port "{self.port}" could not be found"""
+                raise InterfaceException(errtxt)
             elif err is not None:
                 self._thread.join()
                 raise err
