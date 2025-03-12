@@ -41,7 +41,9 @@ class Capture(ABC):
         "File": _setup_file,
     }
 
-    SUPPORTED_INTERFACES = list(__INTERFACES.keys())
+    @staticmethod
+    def supported_interfaces(debug=False):
+        return list(Capture.__INTERFACES.keys())
 
     @staticmethod
     def from_settings(params: dict[Settings,Any]|None = None):
@@ -208,10 +210,10 @@ class PygameCapture(Capture):
         sysname = platform.system()
         match sysname:
             case "Windows":
-                return [*cv2_backends,CaptureBackend.PYGAME_WINDOWS_NATIVE,CaptureBackend.PYGAME_VIDEOCAPTURE]
+                return [CaptureBackend.PYGAME_WINDOWS_NATIVE,CaptureBackend.PYGAME_VIDEOCAPTURE,*cv2_backends]
             case "Linux":
-                return [*cv2_backends,CaptureBackend.PYGAME_LINUX_NATIVE]
-            case _:
+                return [CaptureBackend.PYGAME_LINUX_NATIVE,*cv2_backends]
+            case _: # mac, other
                 return cv2_backends
 
     @classmethod
@@ -300,8 +302,15 @@ def _backend_to_pygame(be: CaptureBackend) -> str|None:
     elif be in CV2_BACKENDS:
         return "OpenCV"
     elif be == CaptureBackend.ANY:
-        return camera.get_backends()[0]
-    # base case, or if CaptureBackend.ANY is passed
+        # return camera.get_backends()[0]
+        match platform.system():
+            case "Windows":
+                return "_camera (msmf)"
+            case "Linux":
+                return "_camera (v412)"
+            case _:
+                return camera.get_backends()[0]
+    # base case
     return None
 
 class CaptureException(BaseException):
