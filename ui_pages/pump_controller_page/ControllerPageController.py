@@ -1,11 +1,12 @@
 from typing import Any, Iterable
-from support_classes.settings_interface import CAMERA_SETTINGS, Settings
+from support_classes.settings_interface import CAMERA_SETTINGS, Settings, CaptureBackend
 from ui_root import UIRoot, UIController
 from pump_control import Pump, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
 from .CONTROLLER_EVENTS import CEvents, ProcessName
 from serial_interface import InterfaceException
-from support_classes import GeneratorException, PumpNames, PumpConfig
+from support_classes import GeneratorException, PumpNames, PumpConfig, SharedState, PygameCapture, CV2Capture
 from .process_controllers import BaseProcess, LevelProcess
+import threading
     
 
 class ControllerPageController(UIController):
@@ -45,12 +46,40 @@ class ControllerPageController(UIController):
 
         self.add_listener(CEvents.StopAll,lambda event: self.pump.run_sync(self.pump.emergency_stop,args=([pmp for pmp in PumpConfig().pumps],)))
 
+        self.add_listener(CEvents.UpdateVideoDevices,self.__get_new_video_devices)
+        
+        
         # General state poll bindings
         pump_state_remover = self._add_queue(pump.queue,self.__handle_pump_state)
         self.__other_removal_callbacks.append(pump_state_remover)
 
         # begin reading the pump speeds
         self.__start_polling()
+
+    def __get_new_video_devices(self, event: CEvents.UpdateVideoDevices):
+
+        vd_state = SharedState[list[str]|list[int]]()
+
+        def _vd_thread(module: str, backend: CaptureBackend, force_new: bool, shared_state = SharedState[list[str]|list[int]]):
+            try:
+                new_list = None
+                if module == "Pygame":
+                    new_list = PygameCapture.get_cameras(force_newlist=force_new,backend=backend)
+                elif module == "OpenCV":
+                    new_list = CV2Capture.get_cameras()
+                if new_list:
+                    shared_state.set_value(new_list)
+            except RuntimeError:
+                shared_state.set_value([])
+
+        vd_thread = threading.Thread(target=_vd_thread,args=(event.module,event.backend,event.force_newlist,vd_state))
+
+        def _on_complete(new_list: list[str]|list[int]):
+            self.notify_event(CEvents.NotifyNewVideoDevices(event.module,event.backend,new_list))
+            vd_thread.join()
+        
+        self._add_state(vd_state,_on_complete,single_call=True)
+        vd_thread.start()
 
     def __handle_pump_state(self, newstate: PumpState):
         if isinstance(newstate,ErrorState):

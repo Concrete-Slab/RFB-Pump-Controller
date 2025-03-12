@@ -2,10 +2,11 @@ import time
 import customtkinter as ctk
 from PIL import Image
 import cv2
-from ui_root import UIRoot, AlertBox
+from ui_root import UIRoot, AlertBoxBase, AlertBox, UIController
 from support_classes.settings_interface import read_setting
 from support_classes import read_settings, modify_settings, Settings, PID_SETTINGS, LOGGING_SETTINGS, PumpNames, PumpConfig, PID_PUMPS, LEVEL_SETTINGS, SharedState, Capture, PygameCapture, DEFAULT_SETTINGS, CaptureBackend, CV2Capture, CAMERA_SETTINGS
 from cv2_gui.cv2_multiprocessing import InputProcess
+from .CONTROLLER_EVENTS import CEvents
 #TODO make independent of model class
 from pump_control.async_levelsensor import LevelReading, LevelOutput
 from typing import Generic,Callable,Any,TypeVar, Protocol
@@ -16,9 +17,7 @@ import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 
-
-
-class DataSettingsBox(AlertBox[dict[Settings,Any]]):
+class _DataSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
 
     ALERT_TITLE = "Data Logging Settings"
 
@@ -154,7 +153,13 @@ class DataSettingsBox(AlertBox[dict[Settings,Any]]):
         ## close the window by notifying of modified changes
         self.destroy_successfully(modifications)
 
-class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
+class DataSettingsBox(AlertBox[dict[Settings,Any]]):
+    def __init__(self, on_success = None, on_failure = None, auto_resize=True):
+        super().__init__(on_success, on_failure, auto_resize)
+    def create(self, root):
+        return _DataSettingsFrame(root,on_success=self.on_success,on_failure=self.on_failure)
+
+class _PIDSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
 
     ALERT_TITLE = "PID Settings"
 
@@ -170,7 +175,7 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
         pump_settings: dict[Settings,PumpNames|None] = {key:pid_settings[key] for key in PID_PUMPS}
 
 
-        frame_list = self.generate_layout("Pump Assignments","Control Parameters",confirm_command=self.__confirm_selections)
+        frame_list, _, _ = self.generate_layout("Pump Assignments","Control Parameters",confirm_command=self.__confirm_selections)
         pump_frame = frame_list[0]
         control_frame = frame_list[1]
 
@@ -367,6 +372,12 @@ class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
                 entry_bgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
                 var.widget.configure(border_color=entry_bgcolor)
 
+class PIDSettingsBox(AlertBox[dict[Settings,Any]]):
+    def __init__(self, on_success = None, on_failure = None, auto_resize=True):
+        super().__init__(on_success, on_failure, auto_resize)
+    def create(self, root):
+        return _PIDSettingsFrame(root,on_success=self.on_success,on_failure=self.on_failure)
+
 def _json2str(json_result: PumpNames|None) -> str:
     if json_result is None:
         out = "None"
@@ -384,7 +395,7 @@ def _str2json(str_result: str) -> PumpNames|None:
 
 Rect = tuple[int,int,int,int]
 
-class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
+class _LevelSelectFrame(AlertBoxBase[Rect,Rect,Rect,float]):
 
     ALERT_TITLE = "Level sensing prompt"
 
@@ -517,15 +528,25 @@ class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
         super().destroy()
         self.__teardown_thread()
 
-class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
+class LevelSelect(AlertBox[Rect,Rect,Rect,float]):
+    def __init__(self, on_success = None, on_failure = None, auto_resize=True):
+        super().__init__(on_success, on_failure, auto_resize)
+    def create(self, root):
+        return _LevelSelectFrame(root,on_success=self.on_success,on_failure=self.on_failure)
+
+class _LevelSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
 
 
     __NUM_CAMERA_SETTINGS = 2
     ALERT_TITLE = "Level Sensing Settings"
 
-    def __init__(self, master: ctk.CTk, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
+    VD_LOADING = "Loading..."
+    NO_VD_FOUND = "No video devices detected"
+
+    def __init__(self, master: ctk.CTk, controller: UIController, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
         self.title(self.ALERT_TITLE)
+        self.controller = controller
         all_settings = read_settings(*LEVEL_SETTINGS)
         prev_interface: str = all_settings[Settings.CAMERA_INTERFACE_MODULE]
         prev_vd: int = all_settings[Settings.VIDEO_DEVICE]
@@ -538,13 +559,13 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         prev_rescale_factor: float = all_settings[Settings.IMAGE_RESCALE_FACTOR]
         # prev_period: float = all_settings[Settings.IMAGE_SAVE_PERIOD]
 
-        segment_frames = self.generate_layout("Camera Settings","Computer Vision Settings",confirm_command=self.__confirm_selections)
+        segment_frames, self.confirm_button, _ = self.generate_layout("Camera Settings","Computer Vision Settings",confirm_command=self.__confirm_selections)
         camera_frame = segment_frames[0]
         cv_frame = segment_frames[1]
         
         self.rescale_var = _make_and_grid(_make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,0,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
         # self.save_period_var = _make_and_grid(_make_entry, camera_frame, "Period Between Image Saves", Settings.IMAGE_SAVE_PERIOD, prev_period, 2, map_fun=float, entry_validator = _validate_time_float, on_return = self.__confirm_selections, units="s")
-        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,1,values=Capture.SUPPORTED_INTERFACES)
+        self.interface_var = _make_and_grid(_make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,1,values=Capture.supported_interfaces(debug=controller.debug))
         self.interface_var.trace_add(self.__interface_changed)
 
         self.sense_period_var = _make_and_grid(_make_entry,cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),1,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
@@ -606,7 +627,7 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
         # backend selection dropdown menu
         pygame_available_backends = [be.value for be in PygameCapture.get_backends()]
         pygame_display_backend = prev_backend.value if prev_backend.value in pygame_available_backends else CaptureBackend.ANY.value
-        self.pygame_backend_var = _make_and_group(_make_menu,
+        self.pygame_backend_var = _make_and_group(_make_menu,   
                                                   camera_frame,
                                                   "Camera Backend Provider",
                                                   Settings.CAMERA_BACKEND,
@@ -637,7 +658,9 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
                                              refresh_function=self.__refresh_pygame_cameras)
 
         self.widget_dict: dict[str,_WidgetGroup] = {"OpenCV": self.cv2_widget_group,"Pygame":self.pygame_widget_group}
-
+        
+        self.controller.add_listener(CEvents.NotifyNewVideoDevices,self.__handle_new_cameras)
+        
         self.__interface_changed()
 
     def __validate_pygame_camera(self,selected_camera):
@@ -652,42 +675,83 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
 
     def __maybe_refresh_pygame_cameras(self,*args):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
-        selected_camera = self.pygame_vd_var.get()
-        try:
-            self.pygame_vd_var.widget.configure(values=["Loading..."])
-            self.pygame_vd_var.widget.set("Loading")
-            new_cameras = PygameCapture.get_cameras(backend=selected_backend)
-            self.pygame_vd_var.widget.configure(values=new_cameras)
-            if selected_camera not in new_cameras and self.pygame_vd_var.widget:
-                self.pygame_vd_var.widget.set(new_cameras[0])
-            else:
-                self.pygame_vd_var.widget.set(selected_camera)
+        # selected_camera = self.pygame_vd_var.get()
+        if self.pygame_vd_var.widget is not None:
+            self.pygame_vd_var.widget.configure(values=[self.VD_LOADING])
+            self.pygame_vd_var.set(self.VD_LOADING)
+            self.pygame_vd_var.disable()
+            self.pygame_backend_var.disable()
+            self.interface_var.disable()
+            self.confirm_button.configure(state=ctk.DISABLED)
+        self.controller.notify_event(CEvents.UpdateVideoDevices("Pygame",selected_backend,False))
+        # selected_backend = CaptureBackend(self.pygame_backend_var.get())
+        # selected_camera = self.pygame_vd_var.get()
+        # self.controller.add_listener()
+        # try:
+        #     self.pygame_vd_var.widget.configure(values=["Loading..."])
+        #     self.pygame_vd_var.widget.set("Loading")
+        #     new_cameras = PygameCapture.get_cameras(backend=selected_backend)
+        #     self.pygame_vd_var.widget.configure(values=new_cameras)
+        #     if selected_camera not in new_cameras and self.pygame_vd_var.widget:
+        #         self.pygame_vd_var.widget.set(new_cameras[0])
+        #     else:
+        #         self.pygame_vd_var.widget.set(selected_camera)
             
-        except RuntimeError:
-            self.pygame_backend_var.set(CaptureBackend.ANY.value)
-            self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
-            self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
-            self.pygame_backend_var.widget.set(CaptureBackend.ANY.value)
-            self.__maybe_refresh_pygame_cameras()
+        # except RuntimeError:
+        #     self.pygame_backend_var.set(CaptureBackend.ANY.value)
+        #     self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+        #     self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
+        #     self.pygame_backend_var.widget.set(CaptureBackend.ANY.value)
+        #     self.__maybe_refresh_pygame_cameras()
+
+    def __handle_new_cameras(self, event: CEvents.NotifyNewVideoDevices):
+        if event.module != "Pygame":
+            return
+        if len(event.devices) == 0:
+            # no video devices available on this backend
+            if event.backend == CaptureBackend.ANY:
+                # nothing else to do, just state there are no video devices
+                self.pygame_vd_var.widget.configure(values=["No Video Devices Found"])
+                self.pygame_vd_var.set("No Video Devices Found")
+                self.pygame_backend_var.enable()
+                self.interface_var.enable()
+            else:
+                # there may just be no cameras for the selected backend in particular, so revert to default backend
+                self.pygame_backend_var.set(CaptureBackend.ANY.value)
+                self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+                self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
+                self.__maybe_refresh_pygame_cameras()
+            return
+        prev_camera = self.pygame_vd_var.get()
+        self.pygame_vd_var.widget.configure(values=event.devices)
+        if prev_camera not in event.devices:
+            self.pygame_vd_var.set(event.devices[0])
+        self.pygame_vd_var.enable()
+        self.pygame_backend_var.enable()
+        self.interface_var.enable()
+        self.confirm_button.configure(state=ctk.NORMAL)
+
+    
     def __refresh_pygame_cameras(self):
         selected_backend = CaptureBackend(self.pygame_backend_var.get())
-        selected_camera = self.pygame_vd_var.get()
+        # selected_camera = self.pygame_vd_var.get()
         if self.pygame_vd_var.widget is not None:
-            self.pygame_vd_var.widget.configure(values=["Loading..."])
-            self.pygame_vd_var.widget.set("Loading")
-        try:
-            new_cameras = PygameCapture.get_cameras(force_newlist=True,backend=selected_backend)
-            self.pygame_vd_var.widget.configure(values=new_cameras)
-            if selected_camera not in new_cameras:
-                self.pygame_vd_var.widget.set(new_cameras[0])
-            else:
-                self.pygame_vd_var.widget.set(selected_camera)
-        except RuntimeError:
-            self.pygame_backend_var.set(CaptureBackend.ANY.value)
-            self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
-            self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
-            self.pygame_backend_var.widget.set(CaptureBackend.ANY.value)
-            self.__maybe_refresh_pygame_cameras()
+            self.pygame_vd_var.widget.configure(values=[self.VD_LOADING])
+            self.pygame_vd_var.set(self.VD_LOADING)
+        self.controller.notify_event(CEvents.UpdateVideoDevices("Pygame",selected_backend,True))
+        # try:
+        #     new_cameras = PygameCapture.get_cameras(force_newlist=True,backend=selected_backend)
+        #     self.pygame_vd_var.widget.configure(values=new_cameras)
+        #     if selected_camera not in new_cameras:
+        #         self.pygame_vd_var.widget.set(new_cameras[0])
+        #     else:
+        #         self.pygame_vd_var.widget.set(selected_camera)
+        # except RuntimeError:
+        #     self.pygame_backend_var.set(CaptureBackend.ANY.value)
+        #     self.pygame_backend_var.widget.configure(fg_color = ApplicationTheme.ERROR_COLOR)
+        #     self.after(1000,lambda: self.pygame_backend_var.widget.configure(fg_color = ctk.ThemeManager.theme["CTkOptionMenu"]["fg_color"]))
+        #     self.__maybe_refresh_pygame_cameras()
+
     def __pygame_refresh_with_label(self):
         menu = self.cv2_vd_var.widget
         loading_label = ctk.CTkLabel(menu,text="Loading...")
@@ -742,6 +806,13 @@ class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
                 entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
                 var.widget.configure(border_color=entry_fgcolor)
 
+class LevelSettingsBox(AlertBox):
+    def __init__(self, controller: UIController, on_success = None, on_failure = None, auto_resize=True):
+        super().__init__(on_success, on_failure, auto_resize)
+        self.controller = controller
+    def create(self, root):
+        return _LevelSettingsFrame(root,self.controller,on_success=self.on_success,on_failure = self.on_failure)
+
 _TimedReading = tuple[float,float,float,float,float]
 def _mean_data(data: list[_TimedReading]) -> _TimedReading:
     n = len(data)
@@ -756,7 +827,7 @@ def _mean_data(data: list[_TimedReading]) -> _TimedReading:
         out[j] = meanval
     return tuple(out)
 
-class LevelDisplay(AlertBox[None]):
+class _LevelDisplayFrame(AlertBoxBase[None]):
 
     MIN_DISPLAY_DATA = 500
     MAX_DISPLAY_DATA = 1000
@@ -892,6 +963,13 @@ class LevelDisplay(AlertBox[None]):
         self.teardown_window()
         return super()._destroy_quietly()
 
+class LevelDisplay(AlertBox):
+    def __init__(self, level_state: SharedState[tuple[LevelReading|None,np.ndarray]], on_success = None, on_failure = None, auto_resize=True):
+        super().__init__(on_success, on_failure, auto_resize)
+        self.level_state = level_state
+    def create(self, root):
+        return _LevelDisplayFrame(root,self.level_state,on_success=self.on_success,on_failure=self.on_failure)
+
 class _WidgetGroup:
     def __init__(self,initial_row = 0, widgets: list[ctk.CTkBaseClass] = [], rows: list[int] = [], columns: list[int] = [], vars: list["_SettingVariable"] = [],children: list["_WidgetGroup"]|None = [], parent: "_WidgetGroup" = None):
         max_index = min(len(widgets),len(rows),len(columns))
@@ -989,6 +1067,13 @@ class _SettingVariable(Generic[T]):
     @property
     def setting(self) -> Settings:
         return self.__setting
+    def disable(self):
+        if self.widget:
+            self.widget.configure(state=ctk.DISABLED)
+    def enable(self):
+        if self.widget:
+            self.widget.configure(state=ctk.NORMAL)
+        
 
 class _MakerFunction(Protocol):
     def __call__(self,frame: ctk.CTkFrame, name: str, settings: Settings, initial_value: str, **kwargs) -> tuple[ctk.CTkLabel,"_SettingVariable",ctk.CTkFrame]: ...

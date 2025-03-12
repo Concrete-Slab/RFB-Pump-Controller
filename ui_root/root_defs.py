@@ -35,7 +35,7 @@ class UIRoot(ctk.CTk):
         self.__events: Dict[threading.Event, list[tuple[EventFunction,bool]]] = {}
         self.__queues: Dict[queue.Queue[Any],list[tuple[QueueFunction,bool]]] = {}
         self.__page_hierarchy: list[Page] = []
-        self._alert_boxes: list[AlertBox] = []
+        self._alert_boxes: list[AlertBoxBase] = []
         self.__current_frame: ctk.CTkFrame|None = None
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.__poll()
@@ -198,13 +198,12 @@ class UIRoot(ctk.CTk):
 
 SuccessSignature = ParamSpec("SuccessSignature")
 
-class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
+class AlertBoxBase(ctk.CTkToplevel,Generic[SuccessSignature]):
     def __init__(self, master: UIRoot, *args, on_success: Callable[SuccessSignature,None] | None = None, on_failure: Callable[[None],None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master,*args, fg_color=fg_color, **kwargs)
         self.__root = master
         self.__on_failure = on_failure
         self.__on_success = on_success
-        self.__event_listeners: dict[str, list[Callable[...,None]]] = {}
         # register alert box with the root
         self.__root._alert_boxes.append(self)
         # bring alert box to front
@@ -225,34 +224,14 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
             self.__root._alert_boxes.remove(self)
         super().destroy()
 
-    def add_listener(self,event: str, callback: Callable[...,None]) -> Callable[[None],None]:
-        try:
-            self.__event_listeners[event].append(callback)
-        except KeyError:
-            self.__event_listeners[event] = [callback]
-        def unregister():
-            self.__event_listeners[event].remove(callback)
-            if len(self.__event_listeners[event]) == 0:
-                self.__event_listeners.pop(event)
-        return unregister
-    
-    def notify_event(self,event: str,*args,**kwargs) -> None:
-        if event in self.__event_listeners.keys():
-            for cb in self.__event_listeners[event]:
-                cb(*args,**kwargs)
-
     def _add_event(self, event: threading.Event, callback: EventFunction,single_call=False) -> CallbackRemover:
         return self.__root.register_event(event,callback,single_call=single_call)
-    
-    T = TypeVar("T")
-    def _add_state(self, state: SharedState[T], callback: StateFunction[T]):
-        return self.__root.register_state(state,callback)
 
     def bring_forward(self):
         self.attributes('-topmost', 1)
         self.after(400,lambda: self.attributes('-topmost', 0))
 
-    def generate_layout(self,*segment_names: list[str],confirm_command: Callable[[None],None] = lambda: None) -> list[ctk.CTkFrame]:
+    def generate_layout(self,*segment_names: list[str],confirm_command: Callable[[None],None] = lambda: None) -> tuple[list[ctk.CTkFrame],ctk.CTkButton,ctk.CTkButton]:
         nFrames = len(segment_names)
         cols = list(range(0,nFrames+1))
         self.columnconfigure(cols,weight=1)
@@ -278,8 +257,7 @@ class AlertBox(ctk.CTkToplevel,Generic[SuccessSignature]):
         cancel_button = ctk.CTkButton(self,text="Cancel",command=self.destroy)
         cancel_button.grid(row=1,column=0,padx=10,pady=5,sticky="nsw")
         # return the frames for other code to add items to
-        return frmlst
-
+        return frmlst, confirm_button, cancel_button
 
 class Page(ABC):
 
@@ -289,6 +267,17 @@ class Page(ABC):
     
     @abstractmethod
     def create(self, root: UIRoot) -> ctk.CTkFrame:
+        pass
+
+
+class AlertBox(ABC,Generic[SuccessSignature]):
+    def __init__(self, on_success: Callable[SuccessSignature,None]|None = None, on_failure: Callable[[None],None]|None = None ,auto_resize = True):
+        super().__init__()
+        self.auto_resize = auto_resize
+        self.on_success = on_success
+        self.on_failure = on_failure
+    @abstractmethod
+    def create(self, root: UIRoot) -> AlertBoxBase[SuccessSignature]:
         pass
 
 

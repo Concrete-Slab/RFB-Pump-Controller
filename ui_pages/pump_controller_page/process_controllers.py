@@ -1,7 +1,7 @@
 from abc import ABC,abstractmethod
 
 from support_classes.shared_state import SharedState
-from ui_root import UIController
+from ui_root import UIController, AlertBoxBase
 from pump_control import Pump
 from support_classes import PumpNames, Settings
 from .CONTROLLER_EVENTS import CEvents, ProcessName
@@ -14,6 +14,7 @@ from typing import Any, Callable
 
 # The ProcessName enum will return a singleton instance of the desired process. This is how the rest of the code should begin their interaction with any process.
 # Because the classes are singleton, they may be referenced before the UI classes or Pump classes exist (although really this should never happen). The set_context method is used to assign these once they are known.
+
 
 
 class BaseProcess(ABC):
@@ -104,7 +105,7 @@ class PIDProcess(BaseProcess):
         if self._controller_context:
             on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.PID))
             on_success = self.__on_settings_modified
-            self._controller_context._create_alert(PIDSettingsBox,on_success=on_success,on_failure=on_failure)
+            self._controller_context._create_alert(PIDSettingsBox(on_success=on_success,on_failure=on_failure))
     
     def __on_settings_modified(self,modifications: dict[Settings,Any]):
         if self._controller_context:
@@ -116,7 +117,7 @@ class LevelProcess(BaseProcess):
     def __init__(self, controller_context: UIController | None = None, pump_context: Pump | None = None):
         super().__init__(controller_context, pump_context)
         self.level_data: _LevelData|None = None
-        self.display_box: LevelDisplay | None = None
+        self.display_box: AlertBoxBase | None = None
         self.display_state: SharedState|None = None
 
     @property
@@ -144,7 +145,7 @@ class LevelProcess(BaseProcess):
                 self._controller_context.notify_event(CEvents.CloseROISelection())
                 if after_success:
                     after_success()
-            box = self._controller_context._create_alert(LevelSelect,on_success=on_success,on_failure=on_failure)
+            box = self._controller_context._create_alert(LevelSelect(on_success=on_success,on_failure=on_failure))
 
     def __send_level_config(self):
         
@@ -165,7 +166,7 @@ class LevelProcess(BaseProcess):
                     if self._pump_context is not None:
                         self._pump_context.stop_levels()
                 
-                self.display_box = self._controller_context._create_alert(LevelDisplay,self.display_state,on_failure=on_close,on_success=on_close)
+                self.display_box = self._controller_context._create_alert(LevelDisplay(self.display_state,on_failure=on_close,on_success=on_close))
             else:
                 self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.LEVEL))
                 if self.display_box:
@@ -183,7 +184,7 @@ class LevelProcess(BaseProcess):
         if self._controller_context:
             on_success = self.__on_settings_modified
             on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.LEVEL))
-            box = self._controller_context._create_alert(LevelSettingsBox,on_failure=on_failure,on_success=on_success)
+            box = self._controller_context._create_alert(LevelSettingsBox(self._controller_context,on_failure=on_failure,on_success=on_success))
 
     def __on_settings_modified(self, modifications: dict[Settings,Any]):
         if self._controller_context:
@@ -230,7 +231,7 @@ class DataProcess(BaseProcess):
         if self._controller_context:
             on_success = self.__on_settings_modified
             on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.DATA))
-            self._controller_context._create_alert(DataSettingsBox,on_success=on_success,on_failure=on_failure)
+            self._controller_context._create_alert(DataSettingsBox(on_success=on_success,on_failure=on_failure))
 
     def __on_settings_modified(self,modifications: dict[Settings,Any]):
         if self._controller_context:

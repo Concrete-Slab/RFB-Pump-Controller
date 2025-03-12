@@ -1,4 +1,4 @@
-from ui_root import UIRoot, EventFunction, StateFunction, QueueFunction, CallbackRemover, Page, AlertBox
+from ui_root import UIRoot, EventFunction, StateFunction, QueueFunction, CallbackRemover, Page, AlertBoxBase, AlertBox
 from threading import Event
 import queue
 from typing import TypeVar, Callable, Any, Dict, ParamSpec, Type
@@ -8,7 +8,6 @@ import inspect
 
 T = TypeVar("T")
 Q = TypeVar("Q")
-P = ParamSpec("P")
 
 class UIEvent:
     pass
@@ -46,14 +45,15 @@ class UIController:
     def _add_event(self, event: Event, callback: EventFunction,single_call=False) -> CallbackRemover:
         return self.__root.register_event(event,callback,single_call=single_call)
     
-    def _add_state(self, state: SharedState[T], callback: StateFunction[T]):
-        return self.__root.register_state(state,callback)
+    def _add_state(self, state: SharedState[T], callback: StateFunction[T], single_call = False) -> CallbackRemover:
+        return self.__root.register_state(state,callback,single_call = single_call)
     
-    def _add_queue(self, qu: queue.Queue[Q], callback: QueueFunction[Q]):
-        return self.__root.register_queue(qu,callback)
+    def _add_queue(self, qu: queue.Queue[Q], callback: QueueFunction[Q], single_call = False) -> CallbackRemover:
+        return self.__root.register_queue(qu,callback, single_call = single_call)
     
-    def _create_alert(self,toplevel: Callable[...,AlertBox[P]],*args, on_success: Callable[P,None]|None = None,on_failure: Callable[[None],None]|None = None,**kwargs):
-        alert = toplevel(self.__root,*args,on_success = on_success,on_failure = on_failure,**kwargs)
+    def _create_alert(self,toplevel: AlertBox):
+        # alert = toplevel(self.__root,self,*args,on_success = on_success,on_failure = on_failure,**kwargs)
+        alert = toplevel.create(self.__root)
         alert.focus_set()
         return alert
     
