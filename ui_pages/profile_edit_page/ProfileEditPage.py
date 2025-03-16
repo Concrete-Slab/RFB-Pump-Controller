@@ -118,7 +118,7 @@ class ProfileEditPage(ctk.CTkFrame):
         
         main_frame.grid(row=1,column=0,columnspan=3,**ApplicationTheme.GRID_STD)
 
-        self.status_lbl.grid(row=0,column=0,columnspan=2,**ApplicationTheme.GRID_STD)
+        self.status_lbl.grid(row=0,column=0,columnspan=3,**ApplicationTheme.GRID_STD)
         self.confirm_button = ctk.CTkButton(self,text="Save",command=self.__confirm)
         cancel_button = ctk.CTkButton(self,text="Cancel",command=self.__cancel)
         cancel_button.grid(row=2,column=0,padx=10,pady=5,sticky="nsw")
