@@ -1,9 +1,10 @@
-from ui_root import UIRoot, Page
+from ui_root import MVPPage
 from .ProfileManagerPage import ProfileManagerPage
 from .ProfileManagerPageController import ProfileManagerPageController
 
-class ProfileManager(Page):
+class ProfileManager(MVPPage):
     def create(self, root):
-        controller = ProfileManagerPageController(root, debug=root.debug)
-        return ProfileManagerPage(root,controller)
+        root.title("Microcontroller Profile Manager")
+        self.controller = ProfileManagerPageController(root, debug=root.debug)
+        return ProfileManagerPage(root,self.controller)
     

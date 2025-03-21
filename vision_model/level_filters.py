@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Iterable
 import numpy as np
 import cv2
-from support_classes import ImageFilterType, Teardown
+from support_classes import ImageFilterType
 from cv2_gui.mouse_events import MouseInput, BoxDrawer, ROISelector, HeightSelector
 
 def _notify_setup(func):

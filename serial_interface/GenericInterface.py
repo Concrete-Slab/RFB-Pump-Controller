@@ -1,17 +1,40 @@
 from abc import ABC, abstractmethod
+import queue
 import serial.tools.list_ports
+from dataclasses import dataclass
 
 DUMMY_PORT = "Dummy Port"
 DUMMY_DESCRIPTION = "Debug Only"
+
+@dataclass
+class WriteCommand:
+    pump: str
+    duty: int
+    def to_str(self) -> str:
+        return GenericInterface.format_duty(self.pump,self.duty)
+    @staticmethod
+    def from_str(str_in: str) -> "WriteCommand":
+        return WriteCommand(*GenericInterface.unformat_duty(str_in))
+
+@dataclass
+class SpeedReading:
+    pump: str
+    speed: float
+
+    @staticmethod
+    def from_str(str_in: str) -> list["SpeedReading"]:
+        return [SpeedReading(*res) for res in GenericInterface.unformat_speeds(str_in)]
 
 
 class GenericInterface(ABC):
 
     def __init__(self,port,**kwargs) -> None:
-        # Constructors for all derived classes should have the same form
-        # Any additional required parameters must be keyword arguments.
-        # If a required parameter is None, then one can simply raise an InterfaceException
-        #TODO maybe implement this functionality in this class so it is automatic on super() call?
+        pass
+
+    @property
+    @abstractmethod
+    def written_duties(self) -> queue.Queue[WriteCommand]:
+        """This is a queue that stores all write commands that have been successfully performed"""
         pass
     
     @abstractmethod
@@ -27,7 +50,7 @@ class GenericInterface(ABC):
         pass
 
     @abstractmethod
-    def write(self,val: str):
+    def write(self,command: WriteCommand):
         pass
 
     @staticmethod
@@ -47,7 +70,16 @@ class GenericInterface(ABC):
     
     @staticmethod
     def format_duty(ident: str, duty: int) -> str:
-        return f"<{ident},{duty}>\n"
+        return f"<{ident},{duty}>"
+    @staticmethod
+    def unformat_duty(str_in: str) -> tuple[str,int]:
+        items = str_in.removeprefix("<").removesuffix(">").split(",")
+        return (items[0],int(items[1]))
+    @staticmethod
+    def unformat_speeds(str_in: str) -> list[tuple[str,float]]:
+        # TODO: The logic for interpreting the serial speed readings is in async_serialreader, but it likely should be handled by the serial interface
+        # In this way, the formatting protocols for writing and reading from the microcontroller are solely handled by GenericInterface
+        raise NotImplementedError("Speed decoding has not been implemented in GenericInterface yet")
 
 
 class InterfaceException(BaseException):

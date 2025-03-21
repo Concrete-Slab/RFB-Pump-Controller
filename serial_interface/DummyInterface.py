@@ -1,9 +1,7 @@
-from .GenericInterface import InterfaceException
-from .SerialInterface import write_loop,read_loop,SerialInterface,_ThreadsafeAsyncEvent,SERIAL_WRITE_PAUSE,flush_write_buffer
-from support_classes import PumpConfig, SharedState, Timer
+from .GenericInterface import InterfaceException, GenericInterface
+from .SerialInterface import SerialInterface
+from support_classes import PumpConfig
 import random
-import threading
-import queue
 import time
 from serial import Serial
 
@@ -11,36 +9,15 @@ from serial import Serial
 
 class DummyInterface(SerialInterface):
     def __init__(self, num_pumps: int, port: str, baudrate: int = 9600, **kwargs) -> None:
+        self.__num_pumps = num_pumps
         try:
             super().__init__(port, baudrate, **kwargs)
         except InterfaceException:
             pass
-        self._thread = threading.Thread(target = dummy_serial_loop, args = (num_pumps,self.port,self._read_queue,self._write_queue,self._thread_alive,self._thread_error,self._data_available))
 
-
-
-def dummy_serial_loop(num_pumps: int, port, read_queue: queue.Queue[str], write_queue: queue.Queue[str], alive_event: _ThreadsafeAsyncEvent, error_state: SharedState[BaseException|None], data_event: _ThreadsafeAsyncEvent):
-    serial_inst = None
-    write_timer = Timer(SERIAL_WRITE_PAUSE)
-    try:
-        serial_inst = DummySerial(num_pumps,port,timeout=0,baudrate=9600)
-        alive_event.set()
-        while alive_event.is_set():
-            ## WRITE TO PORT FROM QUEUE
-            write_loop(serial_inst,write_queue,write_timer)
-            ## READ FROM PORT TO QUEUE
-            read_loop(serial_inst,read_queue)
-            ## NOTIFY IF NEW DATA
-            if not read_queue.empty():
-                data_event.set()
-            time.sleep(0.1)
-    except BaseException as e:
-        error_state.set_value(e)
-    finally:
-        alive_event.clear()
-        flush_write_buffer(serial_inst,write_queue,write_timer)
-        if serial_inst is not None:
-            serial_inst.close()
+    # simply redefining the serial initialiser allows us to insert the mocking "DummySerial" class into the existing serial loop
+    def _serial_initialiser(self):
+        return DummySerial(self.__num_pumps, self.port, baudrate=9600)
 
 
 
@@ -62,8 +39,8 @@ class DummySerial(Serial):
 
     def write(self,b: bytes):
         s = b.decode()
-        pmpname = s[1]
-        speed = str(int(int(s[3:-1])/255 * 12300))
+        pmpname, duty = GenericInterface.unformat_duty(s)
+        speed = str(int(int(duty)/255 * 12300))
         self.applied_duties[pmpname] = speed
 
     def reset_output_buffer(self) -> None:

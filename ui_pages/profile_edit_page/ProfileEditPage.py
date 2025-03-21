@@ -5,7 +5,7 @@ from PIL import Image
 import customtkinter as ctk
 from ui_root import UIController
 from .PROFILE_EDIT_EVENTS import MEvents
-from ui_pages.ui_widgets import ApplicationTheme
+from ui_pages.ui_layout import ApplicationTheme
 from enum import Enum
 from microcontroller import PinDefs
 
@@ -176,7 +176,6 @@ class ProfileEditPage(ctk.CTkFrame):
         self.__mode_change()
 
     def __cancel(self):
-        #TODO the logic for this call stack breaks at the controller for some reason
         self.controller.notify_event(MEvents.Cancel())
 
     def __mode_change(self,*args):
@@ -270,7 +269,7 @@ class ProfileEditPage(ctk.CTkFrame):
             idx = self.__serial_ports.index(port)
             self._serial_dropdown.set(self.__serial_display[idx])
         except ValueError as ve:
-            raise ve #TODO change this to something better
+            self.controller.notify_event(MEvents.Error(f"Port {port} not present in dropdown list"))
 
     @property
     def auto_mode(self) -> bool:

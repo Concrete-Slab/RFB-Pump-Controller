@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from .InfoBox import InfoBox, formatter
 from .ValueSetterWidget import ValueSetterWidget
-from .themes import ApplicationTheme
+from ..ui_layout.themes import ApplicationTheme
 from typing import Callable
 
 
@@ -11,8 +11,8 @@ class PumpWidget(ctk.CTkFrame):
         super().__init__(parent,fg_color=ApplicationTheme.MANUAL_PUMP_COLOR)
         self._pumpName = identifier
 
-        self.columnconfigure([1,2,3],weight=2,uniform="col")
-        self.columnconfigure(0,weight=1,uniform="col")
+        self.columnconfigure([1,2,3],weight=1,uniform="col")
+        self.columnconfigure(0,weight=1)
         self.rowconfigure([0],weight=1)
 
         self.pump_label = ctk.CTkLabel(self,
@@ -24,14 +24,14 @@ class PumpWidget(ctk.CTkFrame):
         self.pump_label.grid(row=1,column=0,padx=10,pady=10,sticky="")
 
         self.speedVar = ctk.DoubleVar(value=0)
-        self._speedWidget = InfoBox(self, self.speedVar,max_value=12300, width = widget_width, height= widget_height, format_fun=format_speed)
+        self._speedWidget = InfoBox(self, self.speedVar,max_value=12300, width = widget_width, height= widget_height, format_fun=format_speed, info_txt=" RPM")
         self._speedWidget.grid(row=1, column=1, sticky="nsew", padx=10, pady=10)
 
-        self.dutyVar = ctk.DoubleVar(value=0)
+        self.dutyVar = ctk.IntVar(value=0)
         self._dutyWidget = InfoBox(self, self.dutyVar, max_value=255, width = widget_width, height=widget_height, max_digits=3)
         self._dutyWidget.grid(row=1, column=2, sticky="nsew", padx=10, pady=10)
 
-        self._dutySetter = ValueSetterWidget(self, self.dutyVar, value_callback = lambda flt: duty_callback(int(flt)))
+        self._dutySetter = ValueSetterWidget(self, value_var=None, value_callback = lambda flt: duty_callback(int(flt)))
         self._dutySetter.grid(row=1, column=3, padx=10, pady=10, sticky="nsew")
 
     def set_bgcolor(self,new_color: str):
@@ -39,10 +39,6 @@ class PumpWidget(ctk.CTkFrame):
 
     def apply(self):
         self._dutySetter.update_value()
-
-    def destroy(self):
-        # TODO end the serial connection
-        super().destroy()
 
 @formatter
 def format_speed(spd: float) -> str:

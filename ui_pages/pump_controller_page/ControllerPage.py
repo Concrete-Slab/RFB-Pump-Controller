@@ -1,15 +1,15 @@
 import customtkinter as ctk
-from ..ui_widgets import PumpWidget,BoolSwitch,SwitchState,ApplicationTheme,LevelBoolSwitch
+from ..ui_widgets import PumpWidget,BoolSwitch,SwitchState,LevelBoolSwitch
+from ..ui_layout import ApplicationTheme
 from ui_root import UIController
 from .CONTROLLER_EVENTS import CEvents, ProcessName
-from .process_controllers import BaseProcess
 from support_classes import read_settings, Settings, PumpNames, PumpConfig, PID_PUMPS
 import copy
 
 
 class ControllerPage(ctk.CTkFrame):
 
-    def __init__(self, parent, controller: UIController, width: int = 200, height: int = 200, corner_radius: int | str | None = None, border_width: int | str | None = None, bg_color: str | tuple[str, str] = "transparent", fg_color: str | tuple[str, str] | None = None, border_color: str | tuple[str, str] | None = None, background_corner_colors: tuple[str | tuple[str, str]] | None = None, overwrite_preferred_drawing_method: str | None = None, **kwargs):
+    def __init__(self, parent, controller: UIController, process_dict: dict[ProcessName,tuple[str,bool]], width: int = 200, height: int = 200, corner_radius: int | str | None = None, border_width: int | str | None = None, bg_color: str | tuple[str, str] = "transparent", fg_color: str | tuple[str, str] | None = None, border_color: str | tuple[str, str] | None = None, background_corner_colors: tuple[str | tuple[str, str]] | None = None, overwrite_preferred_drawing_method: str | None = None, **kwargs):
         super().__init__(parent, width, height, corner_radius, border_width, bg_color, fg_color, border_color, background_corner_colors, overwrite_preferred_drawing_method, **kwargs)
 
         self.UIcontroller = controller
@@ -21,12 +21,15 @@ class ControllerPage(ctk.CTkFrame):
         self.columnconfigure(list(range(0,nColumns)),weight=1,uniform="col")
         i=nInitialRows
 
-        for identifier in PumpConfig().pumps:
-            pump = PumpWidget(self,identifier.value, duty_callback = lambda duty, ident=identifier: self.__manual_duty_set(ident,duty))
+        pump_container = ctk.CTkScrollableFrame(self)
+
+        for i,identifier in enumerate(PumpConfig().pumps):
+            pump = PumpWidget(pump_container,identifier.value, duty_callback = lambda duty, ident=identifier: self.__manual_duty_set(ident,duty))
             self.pump_map[identifier] = pump
-            pump.grid(row=i,column=0,columnspan=nColumns,padx=10,pady=5,sticky="nsew")
-            i += 1
-        self.rowconfigure([0]+list(range(nInitialRows,i)),weight=1,uniform="row")
+            pump.grid(row=i,column=0,padx=10,pady=5,sticky="nsew")
+        self.rowconfigure([nInitialRows],weight=1)
+        pump_container.columnconfigure(0,weight=1)
+        pump_container.grid(row=2,column=0,columnspan=nColumns,padx=0,pady=0,sticky="nsew")
 
         self.status_label = ctk.CTkLabel(self,
                                          text = "Ready",
@@ -63,21 +66,26 @@ class ControllerPage(ctk.CTkFrame):
         self.process_states: dict[ProcessName,ctk.IntVar] = {}
         self.process_boxes: dict[ProcessName,BoolSwitch] = {}
 
-        for j,process in enumerate(ProcessName):
+        j = 0
+        for process,tup in process_dict.items():
+            display_name = tup[0]
+            has_settings = tup[1]
             process_state_var = ctk.IntVar(value=0)
-            if BaseProcess.instanceof(process).has_settings:
+            if has_settings:
                 settings_fun = lambda process_name = process: self.UIcontroller.notify_event(CEvents.OpenSettings(process_name))
             else:
                 settings_fun = None
             if process == ProcessName.LEVEL:
-                process_box = LevelBoolSwitch(self,process_state_var,str(BaseProcess.instanceof(process).name),state_callback=lambda state,process_name = process: self.__switch_pressed(state,process_name),settings_callback=settings_fun,ROI_callback=self.__open_ROI_selection)
+                process_box = LevelBoolSwitch(self,process_state_var,display_name,state_callback=lambda state,process_name = process: self.__switch_pressed(state,process_name),settings_callback=settings_fun,ROI_callback=self.__open_ROI_selection)
                 pass
             else:
-                process_box = BoolSwitch(self,process_state_var,str(BaseProcess.instanceof(process).name), state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
+                process_box = BoolSwitch(self,process_state_var,display_name, state_callback = lambda state, process_name = process: self.__switch_pressed(state,process_name), settings_callback = settings_fun)
             
             process_box.grid(row=0,column=len(ProcessName)-1-j,padx=10,pady=5,sticky="nsew")
             self.process_states[process] = process_state_var
             self.process_boxes[process] = process_box
+
+            j+=1
 
         # add remaining controller listeners
 

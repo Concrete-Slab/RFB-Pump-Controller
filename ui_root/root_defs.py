@@ -105,6 +105,7 @@ class UIRoot(ctk.CTk):
     # KEY PART: modify the event loop of tkinter to perform polling and event callbacks before updating the UI
     def __poll(self):
         # run state callbacks
+        self.after(POLL_REFRESH_TIME_MS,self.__poll)
         states_dict = copy.copy(self.__states)
         for sharedstate in states_dict.keys():
             val = sharedstate.get_value()
@@ -112,13 +113,13 @@ class UIRoot(ctk.CTk):
                 # if val is not none, it has been updated since last check
                 # check through each callback tuple in the shared state
                 for tup in states_dict[sharedstate]:
-                    # run the callback
-                    tup[0](val)
                     # if the callback is set to only run once, remove it
                     if tup[1]:
                         self.__states[sharedstate].remove(tup)
                         if len(self.__states[sharedstate])==0:
                             self.__states.pop(sharedstate)
+                    # run the callback
+                    tup[0](val)
         # delete the temporary copy
         del states_dict
 
@@ -153,7 +154,6 @@ class UIRoot(ctk.CTk):
                 except queue.Empty:
                     pass
         del queues_dict
-        self.after(POLL_REFRESH_TIME_MS,self.__poll)
 
     def __attach_frame(self,page_frame: ctk.CTkFrame) -> None:
         if self.__current_frame is not None:
@@ -166,7 +166,7 @@ class UIRoot(ctk.CTk):
     def back_page(self):
         if len(self.__page_hierarchy)>0:
             # remove top page
-            self.__page_hierarchy.pop()
+            self.__page_hierarchy.pop().destroy()
         # load the new top page
         next_page = self.__page_hierarchy[-1]
         page_frame = next_page.create(self)
@@ -177,6 +177,7 @@ class UIRoot(ctk.CTk):
     def switch_page(self, page: "Page"):
         if page.auto_resize and len(self.__page_hierarchy)>0:
             self.geometry(None)
+            self.__page_hierarchy[-1].destroy()
         self.__page_hierarchy.append(page)
         page_frame = page.create(self)
         self.__attach_frame(page_frame)
@@ -184,16 +185,17 @@ class UIRoot(ctk.CTk):
     def back_custom(self, page: "Page"):
         if len(self.__page_hierarchy)>0:
             # remove top page
-            self.__page_hierarchy.pop()
+            self.__page_hierarchy.pop().destroy()
         if len(self.__page_hierarchy)>0:
             # remove second to top page
             self.__page_hierarchy.pop()
         self.switch_page(page)
         
-
     def destroy(self):
         for box in self._alert_boxes:
             box._destroy_quietly()
+        for page in self.__page_hierarchy:
+            page.destroy()
         super().destroy()
 
 SuccessSignature = ParamSpec("SuccessSignature")
@@ -213,11 +215,13 @@ class AlertBoxBase(ctk.CTkToplevel,Generic[SuccessSignature]):
         self._destroy_quietly()
         if self.__on_success is not None:
             self.__on_success(*args,**kwargs)
+        del self
 
     def destroy(self) -> None:
         self._destroy_quietly()
         if self.__on_failure is not None:
             self.__on_failure()
+        del self
 
     def _destroy_quietly(self):
         if self in self.__root._alert_boxes:
@@ -267,6 +271,10 @@ class Page(ABC):
     
     @abstractmethod
     def create(self, root: UIRoot) -> ctk.CTkFrame:
+        pass
+
+    @abstractmethod
+    def destroy(self) -> None:
         pass
 
 

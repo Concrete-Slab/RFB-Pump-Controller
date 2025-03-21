@@ -1,5 +1,3 @@
-
-
 class ApplicationTheme:
     FONT = 'Helvetica'
     MAIN_FONT_SIZE = 60
@@ -21,6 +19,6 @@ class ApplicationTheme:
     # standardised .grid() arguments
     GRID_STD = {"padx":10,"pady":10,"sticky":"nsew"}
     GRID_BOX = {"padx":0,"pady":0,"sticky":"nsew"}
-    GRID_NS = {"padx":GRID_STD["padx"],"pady":GRID_STD["pady"],"sticky":"nsew"}
+    GRID_NS = {"padx":GRID_STD["padx"],"pady":GRID_STD["pady"],"sticky":"ns"}
 
 

@@ -13,24 +13,31 @@ import pygame.camera as camera
 from pygame import _camera_opencv
 import pygame as pg
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 import platform
 import time
 from PIL import Image
 import numpy as np
 
+class _CapFun(Protocol):
+    def __call__(vd_num: int, auto_exposure: bool, exposure_time: int, backend: str, scale_factor: float) -> "Capture": ...
+def _capfun(fn: _CapFun) -> _CapFun:
+    return _CapFun
+
+@_capfun
 def _setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
     return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
-
+@_capfun
 def _setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
-    lst_devices = PygameCapture.get_cameras(backend=actual_backend)
-    actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
+    # lst_devices = PygameCapture.get_cameras(backend=actual_backend)
+    # actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
+    actual_device = vd_num if vd_num > 0 else 0
     return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
-
-def _setup_file(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float):
-    default_directory = read_setting(Settings.IMAGE_DIRECTORY)
+@_capfun
+def _setup_file(*args) -> "Capture":
+    default_directory = read_setting(Settings.FILECAPTURE_DIRECTORY)
     return FileCapture(default_directory,".png")
 
 class Capture(ABC):
@@ -92,17 +99,28 @@ class Capture(ABC):
 class FileCapture(Capture):
     def __init__(self, directory: Path, extension: str, auto_exposure: bool = DEFAULT_SETTINGS[Settings.AUTO_EXPOSURE], exposure_time: int = DEFAULT_SETTINGS[Settings.EXPOSURE_TIME], backend: CaptureBackend = DEFAULT_SETTINGS[Settings.CAMERA_BACKEND], scale_factor: int = DEFAULT_SETTINGS[Settings.IMAGE_RESCALE_FACTOR], **kwargs) -> None:
         super().__init__(0, auto_exposure, exposure_time, backend, scale_factor, **kwargs)
-        imnames = [directory/fname for fname in os.listdir(directory) if fname[-len(extension):]==extension]
+        self.directory = directory
+        self.extension = extension
+        self.image_names = []
+        self._i = 0
+    def open(self):
+        self._i = 0
+        if not os.path.isdir(self.directory):
+            raise CaptureException("File capture directory does not exist")
+        imnames = [self.directory/fname for fname in os.listdir(self.directory) if len(fname)>len(self.extension) and fname[-len(self.extension):]==self.extension]
+        if len(imnames)<1:
+            raise CaptureException(f"File capture directory does not contain any {self.extension} files")
         # Choose a random index in the list
         start_index = random.randint(0, len(imnames) - 1)
         # Generate the cyclic permutation
         self.image_names = imnames[start_index:] + imnames[:start_index]
-        self._i = 0
-    def open(self):
-        self._i = 0
+    
     def get_image(self, rescale: bool = True) -> ndarray:
         img = np.array(Image.open(self.image_names[self._i]))
-        self._i +=1
+        if self._i+1>=len(self.image_names):
+            self._i=0
+        else:
+            self._i += 1
         return img
     def close(self):
         pass
@@ -210,9 +228,11 @@ class PygameCapture(Capture):
         sysname = platform.system()
         match sysname:
             case "Windows":
-                return [CaptureBackend.PYGAME_WINDOWS_NATIVE,CaptureBackend.PYGAME_VIDEOCAPTURE,*cv2_backends]
+                cv2_backends.remove(CaptureBackend.ANY)
+                return [CaptureBackend.ANY,CaptureBackend.PYGAME_WINDOWS_NATIVE,CaptureBackend.PYGAME_VIDEOCAPTURE,*cv2_backends]
             case "Linux":
-                return [CaptureBackend.PYGAME_LINUX_NATIVE,*cv2_backends]
+                cv2_backends.remove(CaptureBackend.ANY)
+                return [CaptureBackend.ANY,CaptureBackend.PYGAME_LINUX_NATIVE,*cv2_backends]
             case _: # mac, other
                 return cv2_backends
 

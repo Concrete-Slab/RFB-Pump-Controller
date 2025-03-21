@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from enum import Enum
-from .themes import ApplicationTheme
+from ..ui_layout.themes import ApplicationTheme
 from typing import Callable
 from PIL import Image
 from pathlib import Path

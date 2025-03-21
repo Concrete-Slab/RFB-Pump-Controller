@@ -1,1 +1,1 @@
-from .Pump import Pump, PumpState, ErrorState, ReadyState, ActiveState, PIDException, LevelException, ReadException, LoadingState
+from .Pump import Pump, PumpState, ErrorState, ReadyState, PIDException, LevelException, ReadException, LoadingState

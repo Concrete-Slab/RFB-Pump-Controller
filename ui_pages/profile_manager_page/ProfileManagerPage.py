@@ -1,6 +1,5 @@
 import customtkinter as ctk
-
-from ui_pages.ui_widgets.themes import ApplicationTheme
+from ..ui_layout import ApplicationTheme
 from .PROFILE_MANAGER_EVENTS import PrEvents
 from ui_root import UIController
 

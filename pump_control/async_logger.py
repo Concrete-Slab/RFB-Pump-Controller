@@ -1,5 +1,5 @@
 from typing import Any, Iterable
-from support_classes import SharedState, Settings, Generator, LOGGING_SETTINGS, DEFAULT_SETTINGS, PumpNames, PumpConfig, GeneratorException
+from support_classes import SharedState, Settings, Generator, LOGGING_SETTINGS, DEFAULT_SETTINGS, PumpNames, PumpConfig, GeneratorException, PID_PUMPS
 from .async_levelsensor import LevelOutput
 from .async_pidcontrol import Duties
 from .async_serialreader import SpeedReading
@@ -15,6 +15,12 @@ from enum import Enum
 
 _LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY,Settings.IMAGE_DIRECTORY])
 _LOG_STATES = set([Settings.LOG_LEVELS,Settings.LOG_PID,Settings.LOG_SPEEDS,Settings.LOG_IMAGES])
+_DEFAULT_PUMP_MAP = {setting : DEFAULT_SETTINGS[setting] for setting in PID_PUMPS}
+_DUTY_HEADER_MAP = {Settings.ANOLYTE_PUMP: "Anolyte Pump Duty",
+                    Settings.CATHOLYTE_PUMP: "Catholyte Pump Duty",
+                    Settings.ANOLYTE_REFILL_PUMP: "Anolyte Refill Pump Duty",
+                    Settings.CATHOLYTE_REFILL_PUMP: "Catholyte Refill Pump Duty",
+                    }
 
 class _DataType(Enum):
     IMAGE = "image"
@@ -52,6 +58,7 @@ class DataLogger(Generator[None]):
             log_spds: bool = DEFAULT_SETTINGS[Settings.LOG_SPEEDS],
             log_dtys: bool = DEFAULT_SETTINGS[Settings.LOG_PID],
             log_lvls: bool = DEFAULT_SETTINGS[Settings.LOG_LEVELS],
+            pump_map: dict[Settings,PumpNames|None] = _DEFAULT_PUMP_MAP,
             data_logging_period: float = DEFAULT_SETTINGS[Settings.LOGGING_PERIOD],
             image_logging_period: float = DEFAULT_SETTINGS[Settings.IMAGE_SAVE_PERIOD]
         ) -> None:
@@ -75,20 +82,14 @@ class DataLogger(Generator[None]):
         self.img_period = image_logging_period
         self.__base_filename: str = ""
         self.img_timer = 0.0
-
-        # _HEADERS: dict[_DataType,list[str]] = {
-        #     _DataType.LEVELS: ["Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"],
-        #     _DataType.SPEEDS: [f"Pump {str(pmp.value).upper()}" for pmp in PumpConfig().pumps],
-        #     _DataType.DUTIES:  ["Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
-        # }
-        # self.headers = {key: ["Elapsed Time",*_HEADERS[key]] for key in _HEADERS.keys()}
         self.headers = {}
+        self.pump_map = pump_map
 
     def set_parameters(self,settings: dict[Settings,Any]):
-        settings = {key:settings[key] for key in settings if key in LOGGING_SETTINGS}
-        if len(settings)>0:
+        logging_settings = {key:settings[key] for key in settings if key in LOGGING_SETTINGS}
+        if len(logging_settings)>0:
             self.stop()
-        for key in settings.keys():
+        for key in logging_settings.keys():
             try:
                 dt_key = _DataType.from_setting(key)
                 if key in _LOG_STATES:
@@ -100,6 +101,9 @@ class DataLogger(Generator[None]):
                     self.period = settings[key]
                 elif key == Settings.IMAGE_SAVE_PERIOD:
                     self.img_period = settings[key]
+        pump_settings = {key:settings[key] for key in settings if key in _DUTY_HEADER_MAP.keys()}
+        for key in pump_settings.keys():
+            self.pump_map[key] = pump_settings[key]
 
     def teardown(self):
         pass
@@ -124,13 +128,14 @@ class DataLogger(Generator[None]):
     
     async def _setup(self):
         self.__base_filename = str(datetime.now().strftime("%Y-%m-%d %H-%M-%S"))+".csv"
-
+        
         _HEADERS: dict[_DataType,list[str]] = {
-            _DataType.LEVELS: ["Anolyte Level Avg", "Catholyte Avg","Avg Difference","Total Change in Electrolyte Level"],
-            _DataType.SPEEDS: [f"Pump {str(pmp.value).upper()}" for pmp in PumpConfig().pumps],
-            _DataType.DUTIES:  ["Anolyte Pump Duty", "Catholyte Pump Duty", "Anolyte Refill Pump Duty","Catholyte Refill Pump Duty"]
+            _DataType.LEVELS: ["Anolyte Level Avg (mL)", "Catholyte Avg (mL)","Avg Difference (mL)","Total Change in Electrolyte Level (mL)"],
+            _DataType.SPEEDS: [f"Pump {str(pmp.value).upper()} (RPM)" for pmp in PumpConfig().pumps],
+            _DataType.DUTIES:  [_DUTY_HEADER_MAP[key] for key in self.pump_map if self.pump_map[key] is not None] # these are the headers for the duty logs. We only need the ones that the PID process will be using (therefore a non-None pump in self.pump_map)
         }
-        self.headers = {key: ["Elapsed Time",*_HEADERS[key]] for key in _HEADERS.keys()}
+
+        self.headers = {key: ["Elapsed Time (s)",*_HEADERS[key]] for key in _HEADERS.keys()}
 
         self.img_timer = time.time()
 
@@ -147,22 +152,41 @@ class DataLogger(Generator[None]):
         self.__initial_timestamp = time.time()
         await asyncio.sleep(0.1)
 
+    def _get_role_from_pmp(self,pmp: PumpNames|None):
+        if pmp is None:
+            raise GeneratorException("Nonetype pump has been assigned a duty - cannot save duties")
+        valid_keys = [key for key in self.pump_map.keys() if self.pump_map[key] == pmp]
+        if len(valid_keys)!=1:
+            raise GeneratorException(f"Pump {pmp.value} has {len(valid_keys)} PID roles when it should only have 1 - cannot save duties")
+        return valid_keys[0]
+
     async def _loop(self) -> None:
         perftimer = time.time()
 
         duties = self.duty_state.force_value()
+        ordered_duties_list = None
         if duties is not None:
-            #TODO This logic of zero padding does not preserve the columns and needs to be changed
-            valid_duties = list(duties.values())
-            zero_padding = [0]*max(len(self.headers[_DataType.DUTIES])-1-len(valid_duties), 0)
-            duties = [*valid_duties,*zero_padding]
+            ordered_duties_list = [0]*len(duties)
+            # go through each pump in the new duties:
+            for pmp in duties.keys():
+                # find the role of the pump in the PID scheme
+                pmp_role = self._get_role_from_pmp(pmp)
+                # find the header title for that setting
+                header = _DUTY_HEADER_MAP[pmp_role]
+                # find the column number of that heading (-1 to remove elapsed time)
+                column = self.headers[_DataType.DUTIES].index(header)-1
+                # put the duty in that column
+                ordered_duties_list[column] = duties[pmp]
+            # valid_duties = list(duties.values())
+            # zero_padding = [0]*max(len(self.headers[_DataType.DUTIES])-1-len(valid_duties), 0)
+            # duties = [*valid_duties,*zero_padding]
         lvl_data = self.level_state.force_value()
         speeds = self.speed_state.force_value()
         if speeds is not None:
             speeds = [spd for spd in speeds.values()]
         t = time.time()-self.__initial_timestamp
         
-        self._save_one(t,_DataType.DUTIES,duties)
+        self._save_one(t,_DataType.DUTIES,ordered_duties_list)
         self._save_one(t,_DataType.SPEEDS,speeds)
 
         if lvl_data is not None:
@@ -189,6 +213,6 @@ class DataLogger(Generator[None]):
     def _maybe_save_image(self,image: np.ndarray|None):
         t = time.time()
         time_since_last_image = t - self.img_timer
-        if time_since_last_image>self.img_period and image is not None:
+        if self.logged[_DataType.IMAGE] and time_since_last_image>self.img_period and image is not None:
             Image.fromarray(image).save(self._get_path(_DataType.IMAGE))
             self.img_timer = t

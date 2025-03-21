@@ -1,9 +1,11 @@
 import customtkinter as ctk
-from .themes import ApplicationTheme
-from typing import Callable
+from ..ui_layout.themes import ApplicationTheme
+from typing import Protocol
 
-Formatter = Callable[[float|int],str]
-def formatter(f: Formatter) -> Formatter:
+class StringFormatter(Protocol):
+    def __call__(self, x: float|int) -> str: ...
+
+def formatter(f: StringFormatter) -> StringFormatter:
     return f
 
 
@@ -17,9 +19,11 @@ class InfoBox(ctk.CTkFrame):
                  max_digits: int = 0,
                  width: int = 300,
                  height: int = 60,
-                 format_fun: Formatter = lambda x: str(x)):
+                 format_fun: StringFormatter = lambda x: str(x),
+                 info_txt: str = ""):
         super().__init__(master=parent, fg_color=fg_color, width = width, height = height)
         self.max_value = max_value
+        self.info_text = info_txt
         self.format_fun = format_fun
         self.columnconfigure([0,1],weight=1)
         self.rowconfigure([0],weight=1)
@@ -46,7 +50,7 @@ class InfoBox(ctk.CTkFrame):
 
     def _update_progress_value(self, *args):
         new_val = self.value_var.get()
-        self.text_var.set(self.format_fun(new_val))
+        self.text_var.set(f"{self.format_fun(new_val)}{self.info_text}")
         if self.max_value is None:
             self.progress_bar.set(new_val)
         else:

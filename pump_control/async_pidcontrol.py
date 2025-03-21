@@ -2,7 +2,7 @@ from typing import Any, Iterable
 from simple_pid import PID
 from serial_interface.SerialInterface import SERIAL_WRITE_PAUSE
 from .async_levelsensor import LevelReading, LevelOutput
-from serial_interface import GenericInterface
+from serial_interface import GenericInterface, WriteCommand
 import asyncio
 from support_classes import Generator,SharedState, DEFAULT_SETTINGS, Settings, PumpNames, PumpConfig
 import time
@@ -10,9 +10,9 @@ import time
 Duties = dict[PumpNames,int]
 
 PID_PAUSE_MARGIN = 1.5
-"""Factor of the SERIAL_WRITE_PAUSE that will be awaited to send new duties"""
+"""Factor of the *SERIAL_WRITE_PAUSE* that will be awaited to send new duties"""
 PID_DATA_TIMEOUT = 1.0
-""""Seconds that the PID controller will wait for new data before checking loop conditions. Essentially only determines how long it will take to kill the PID process once level process is killed"""
+"""Seconds that the PID controller will wait for new data before checking loop conditions. Essentially only determines how long it will take to kill the PID process once level process is killed. Other than that, if this is set too low then it could hinder performance: polling would require a larger fraction of event loop time."""
 
 class PIDRunner(Generator[Duties]):
 
@@ -178,9 +178,11 @@ class PIDRunner(Generator[Duties]):
         elif time_stop_refill or full_stop_refill:
             # stop the refill and reset variables
             anolyte_write = await self.__write_nullsafe(self.__pid_pumps[Settings.ANOLYTE_REFILL_PUMP],0)
-            anolyte_write = await self.__write_nullsafe(self.__pid_pumps[Settings.CATHOLYTE_REFILL_PUMP],0)
+            catholyte_write = await self.__write_nullsafe(self.__pid_pumps[Settings.CATHOLYTE_REFILL_PUMP],0)
             self.__refill_start_time = None
             self.__refill_finish_time = current_time
+        
+        
         duties: Duties = {}
 
         anolyte_refillrate = self.__prev_duties[self.__pid_pumps[Settings.ANOLYTE_REFILL_PUMP]] if self.__pid_pumps[Settings.ANOLYTE_REFILL_PUMP] is not None else 0
@@ -228,10 +230,10 @@ class PIDRunner(Generator[Duties]):
     
     async def __write_nullsafe(self,pmp: PumpNames,duty: int) -> bool:
         if (pmp is not None) and (self.__prev_duties[pmp] != duty):
-            pmpstr = pmp.value
-            self.__serial_interface.write(GenericInterface.format_duty(pmpstr,duty))
+            command = WriteCommand(pmp.value,duty)
+            self.__serial_interface.write(command)
             self.__prev_duties[pmp] = duty
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(1.5) #TODO Why is this line here?
         return (pmp is not None)
  
     async def __wait_for_levels(self) -> bool:
@@ -249,8 +251,7 @@ class PIDRunner(Generator[Duties]):
                 await asyncio.wait_for(self.__level_event.wait(),timeout = PID_DATA_TIMEOUT)
                 if self.__refill_start_time is not None:
                     # system is refilling, check to end refill in the case that new levels will take too long
-                    # TODO Major error here????????????????
-                    await self.__handle_refill(1,0)
+                    await self.__handle_refill(None) #TODO <--- Untested line
                 break
             except TimeoutError:
                 pass

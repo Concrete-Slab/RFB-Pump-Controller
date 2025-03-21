@@ -30,8 +30,6 @@ class ProfileManagerPageController(UIController):
             self.notify_event(PrEvents.Error(ipe))
         self.notify_event(PrEvents.UpdateProfiles(profile_names))
 
-
-
     def __get_profiles(self, event: PrEvents.RequestProfiles):
         new_list = read_profiles(self.debug)
         if new_list != self.__current_profiles:

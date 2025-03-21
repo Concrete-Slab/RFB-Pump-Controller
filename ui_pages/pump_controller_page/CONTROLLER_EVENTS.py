@@ -1,5 +1,5 @@
 from enum import Enum
-from support_classes import PumpNames, Settings, CaptureBackend
+from support_classes import PumpNames, Settings
 from dataclasses import dataclass
 from typing import Any
 from ui_root import event_group
@@ -69,15 +69,3 @@ class CEvents:
         modifications: dict[Settings,Any]
     class StopAll:
         """Stop all pumps"""
-
-    @dataclass
-    class UpdateVideoDevices:
-        module: str
-        backend: CaptureBackend
-        force_newlist: bool
-
-    @dataclass
-    class NotifyNewVideoDevices:
-        module: str
-        backend: CaptureBackend
-        devices: list[str]|list[int]

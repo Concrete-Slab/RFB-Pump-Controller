@@ -1,11 +1,10 @@
-import atexit
 from typing import Callable
 from abc import ABC,abstractmethod
 
 class Teardown(ABC):
+    """Class that implements a teardown function to be run at program termination"""
     def __init__(self,*args,**kwargs) -> None:
         super().__init__()
-        # atexit.register(self.teardown)
         TDExecutor.register(self.teardown)
         pass
 

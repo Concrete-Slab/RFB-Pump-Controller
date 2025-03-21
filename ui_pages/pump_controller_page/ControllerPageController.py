@@ -1,13 +1,11 @@
-from typing import Any, Iterable
-from support_classes.settings_interface import CAMERA_SETTINGS, Settings, CaptureBackend
+from typing import Iterable
+from support_classes.settings_interface import CAMERA_SETTINGS
 from ui_root import UIRoot, UIController
-from pump_control import Pump, PumpState, ReadyState, ActiveState, ErrorState, PIDException, LevelException, ReadException
+from pump_control import Pump, PumpState, ReadyState, ErrorState, PIDException, LevelException, ReadException
 from .CONTROLLER_EVENTS import CEvents, ProcessName
-from serial_interface import InterfaceException
-from support_classes import GeneratorException, PumpNames, PumpConfig, SharedState, PygameCapture, CV2Capture
-from .process_controllers import BaseProcess, LevelProcess
-import threading
-    
+from serial_interface import InterfaceException, WriteCommand
+from support_classes import GeneratorException, PumpNames, PumpConfig
+from .processes import PIDProcess, LevelProcess, DataProcess, BaseProcess
 
 class ControllerPageController(UIController):
 
@@ -17,70 +15,45 @@ class ControllerPageController(UIController):
         super().__init__(root)
         self.pump = pump
         self.__polling_removal_callbacks = []
-        self.__other_removal_callbacks = []
-
         # important event checker - if the pump thread ends then it will need to be joined with main to signal it for garbage colelction
         # pump_join_remover = self._add_event(pump.join_event,pump.stop_event_loop,single_call=True)
         # self.__other_removal_callbacks.append(pump_join_remover)
 
-        # dependency injection
-        for process in ProcessName:
-            BaseProcess.instanceof(process).set_context(self,self.pump)
+        self.__level_process = LevelProcess(self,pump)
+
+        self.PROCESS_MAP: dict[ProcessName,BaseProcess] = {
+            ProcessName.PID: PIDProcess(self,pump),
+            ProcessName.LEVEL: self.__level_process,
+            ProcessName.DATA: DataProcess(self,pump)
+        }
 
         # General process events
         def start_process(event: CEvents.StartProcess):
-            BaseProcess.instanceof(event.process_name).start()
+            self.PROCESS_MAP[event.process_name].start()
         self.add_listener(CEvents.StartProcess,start_process)
         def close_process(event: CEvents.CloseProcess):
-            BaseProcess.instanceof(event.process_name).close()
+            self.PROCESS_MAP[event.process_name].close()
         self.add_listener(CEvents.CloseProcess,close_process)
         def open_settings(event: CEvents.OpenSettings):
-            BaseProcess.instanceof(event.process_name).open_settings()
+            self.PROCESS_MAP[event.process_name].open_settings()
         self.add_listener(CEvents.OpenSettings, open_settings)
 
         self.add_listener(CEvents.ManualDutySet,lambda event: self.pump.manual_set_duty(event.pump_id, event.new_duty))
 
         self.add_listener(CEvents.SettingsModified,self.__handle_settings_changed)
 
-        self.add_listener(CEvents.OpenROISelection,lambda event: LevelProcess.get_instance().request_ROIs())
+        self.add_listener(CEvents.OpenROISelection,lambda event: self.__level_process.request_ROIs())
 
-        self.add_listener(CEvents.StopAll,lambda event: self.pump.run_sync(self.pump.emergency_stop,args=([pmp for pmp in PumpConfig().pumps],)))
-
-        self.add_listener(CEvents.UpdateVideoDevices,self.__get_new_video_devices)
-        
+        self.add_listener(CEvents.StopAll,lambda event: self.pump.run_sync(self.pump.emergency_stop,args=([pmp for pmp in PumpConfig().pumps],)))        
         
         # General state poll bindings
-        pump_state_remover = self._add_queue(pump.queue,self.__handle_pump_state)
-        self.__other_removal_callbacks.append(pump_state_remover)
+        self._add_queue(pump.queue,self.__handle_pump_state)
+        self._add_queue(pump.serial_writes,self.__handle_serial_write)
 
         # begin reading the pump speeds
         self.__start_polling()
 
-    def __get_new_video_devices(self, event: CEvents.UpdateVideoDevices):
-
-        vd_state = SharedState[list[str]|list[int]]()
-
-        def _vd_thread(module: str, backend: CaptureBackend, force_new: bool, shared_state = SharedState[list[str]|list[int]]):
-            try:
-                new_list = None
-                if module == "Pygame":
-                    new_list = PygameCapture.get_cameras(force_newlist=force_new,backend=backend)
-                elif module == "OpenCV":
-                    new_list = CV2Capture.get_cameras()
-                if new_list:
-                    shared_state.set_value(new_list)
-            except RuntimeError:
-                shared_state.set_value([])
-
-        vd_thread = threading.Thread(target=_vd_thread,args=(event.module,event.backend,event.force_newlist,vd_state))
-
-        def _on_complete(new_list: list[str]|list[int]):
-            self.notify_event(CEvents.NotifyNewVideoDevices(event.module,event.backend,new_list))
-            vd_thread.join()
-        
-        self._add_state(vd_state,_on_complete,single_call=True)
-        vd_thread.start()
-
+    
     def __handle_pump_state(self, newstate: PumpState):
         if isinstance(newstate,ErrorState):
             error = newstate.error
@@ -95,9 +68,9 @@ class ControllerPageController(UIController):
                 self.notify_event(CEvents.Error(error))
         elif isinstance(newstate,ReadyState):
             self.notify_event(CEvents.Ready())
-        elif isinstance(newstate, ActiveState):
-            for pmp in newstate.auto_duties.keys():
-                self.notify_event(CEvents.AutoDutySet(pmp,newstate.auto_duties[pmp]))
+
+    def __handle_serial_write(self, new_write: WriteCommand):
+        self.notify_event(CEvents.AutoDutySet(PumpConfig().pumps(new_write.pump), new_write.duty))
 
     # SERIAL POLLING CALLBACKS
     def __start_polling(self):
@@ -128,6 +101,6 @@ class ControllerPageController(UIController):
             return False
         if _contains_any(modifications,CAMERA_SETTINGS):
             # if camera settings are modified, image scaling/size/position may have changed, so need to reselect data
-            LevelProcess.get_instance().level_data = None
+            self.__level_process.level_data = None
         self.pump.change_settings(modifications)
         

@@ -1,7 +1,7 @@
 import queue
 from typing import Any, Coroutine, Iterable
-from serial_interface import GenericInterface, InterfaceException
-from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, PumpConfig, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS
+from serial_interface import GenericInterface, InterfaceException, WriteCommand
+from support_classes import AsyncRunner, Teardown, SharedState, GeneratorException, Settings, read_settings, PID_SETTINGS, PumpNames, PumpConfig, CAMERA_SETTINGS, LEVEL_SETTINGS,LOGGING_SETTINGS, PID_PUMPS
 from concurrent.futures import Future
 from support_classes.camera_interface import Capture
 from .async_levelsensor import LevelSensor, LevelOutput, Rect
@@ -38,10 +38,6 @@ class ReadyState(PumpState):
     def __init__(self) -> None:
         pass
 
-class ActiveState(PumpState):
-    def __init__(self,new_duties: dict[PumpNames, int]):
-        self.auto_duties = new_duties
-
 class ErrorState(PumpState):
     def __init__(self,error: BaseException) -> None:
         self.error = error
@@ -63,29 +59,13 @@ class LoggerException(BaseException):
 
 class Pump(AsyncRunner,Teardown):
 
-    
-
     def __init__(self, serial_interface: GenericInterface, **kwargs) -> None:
         super().__init__()
 
         self.__serial_interface = serial_interface
 
-        self.state: SharedState[PumpState] = SharedState[PumpState]()
         self.queue: queue.Queue[PumpState] = queue.Queue()
-
-        #TODO this is a hefty call in the UI thread - it can make the program appear to have frozen!
-        # self.__level: LevelSensor = LevelSensor()
-        # self.__pid: PIDRunner = PIDRunner(self.__level.state,
-        #                                   self.__serial_interface,
-        #                                   self.__level.sensed_event,
-        #                                   )
-        # self.__poller: SerialReader = SerialReader(self.__serial_interface)
-        # self.__logger: DataLogger = DataLogger(self.__poller.state,self.__pid.state,self.__level.state)
-
-        # self.__level: LevelSensor|None = None
-        # self.__pid: PIDRunner|None = None
-        # self.__poller: SerialReader|None = None
-        # self.__logger: DataLogger|None = None
+        self.serial_writes = self.__serial_interface.written_duties
         
 
 
@@ -97,16 +77,13 @@ class Pump(AsyncRunner,Teardown):
                 PumpConfig().generate_pumps(n_pumps)
                 settings = read_settings()
                 self.change_settings(settings)
-                # self.state.set_value(ReadyState())
                 self.queue.put(ReadyState())
             except InterfaceException as e:
                 # Future completed with error: Assign error state to queue and close loop
-                # self.state.set_value(ErrorState(e))
                 self.queue.put(ErrorState(e))
                 self.stop_event_loop()
             except:
                 self.queue.put(ErrorState(BaseException("Unknown Error")))
-                # self.state.set_value(ErrorState(BaseException("Unknown Error")))
                 self.stop_event_loop()
         
         self.run_async(self.__establish(), callback = on_established)
@@ -133,11 +110,9 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except (InterfaceException) as ie:
-            # self.state.set_value(ErrorState(ie))
             self.queue.put(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            # self.state.set_value(ReadException(str(ge)))
             self.queue.put(ReadException(ge))
         finally:
             self.stop_pid()
@@ -155,11 +130,9 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except (InterfaceException) as ie:
-            # self.state.set_value(ErrorState(ie))
             self.queue.put(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            # self.state.set_value(ErrorState(PIDException(str(ge))))
             self.queue.put(ErrorState(PIDException(str(ge))))
         finally:
             self.stop_pid()
@@ -177,7 +150,6 @@ class Pump(AsyncRunner,Teardown):
         try:
             self.__level.set_vision_parameters(rect1, rect2, rect_ref, vol_ref)
         except ValueError as e:
-            # self.state.set_value(ErrorState(LevelException(str(e))))
             self.queue.put(ErrorState(LevelException(str(e))))
         self.run_async(self.__level.generate(), callback = self.__levels_check_error)
         return (self.__level.is_running,self.__level.state)
@@ -186,11 +158,9 @@ class Pump(AsyncRunner,Teardown):
         try:
             future.result()
         except InterfaceException as ie:
-            # self.state.set_value(ErrorState(ie))
             self.queue.put(ErrorState(ie))
             self.teardown()
         except GeneratorException as ge:
-            # self.state.set_value(ErrorState(LevelException(str(ge))))
             self.queue.put(ErrorState(LevelException(str(ge))))
         finally:
             self.stop_levels()
@@ -201,20 +171,13 @@ class Pump(AsyncRunner,Teardown):
 
     @_inform_attrerror
     def manual_set_duty(self,identifier: PumpNames, new_duty: int):
-        if is_duty(new_duty):
-            pid_pumps = [pmp for pmp in self.__pid.get_pumps().values() if pmp is not None]
-            if identifier in pid_pumps and self.__pid.is_running.value:
-                self.stop_pid()
-                # state_dict: dict[PumpNames,int] = {}
-                # for pidpmp in pid_pumps:
-                #     if pidpmp is not None and pidpmp != identifier:
-                #         self.run_async(self.__serial_interface.write(GenericInterface.format_duty(pidpmp.value,0)))
-                #         state_dict = {**state_dict, pidpmp: 0}
-                # self.state.set_value(ActiveState(state_dict))
-                pumps_to_stop = {pmpname for pmpname in pid_pumps if pmpname != identifier}
-                self.run_sync(self.emergency_stop,args=(pumps_to_stop,))
-            writestr = GenericInterface.format_duty(identifier.value,new_duty)
-            self.run_sync(self.__serial_interface.write,args=(writestr,))
+        if not is_duty(new_duty):
+            return
+        pid_pumps = [pmp for pmp in self.__pid.get_pumps().values() if pmp is not None]
+        if identifier in pid_pumps and self.__pid.can_generate():
+            self.stop_pid()
+        command = WriteCommand(identifier.value,new_duty)
+        self.run_sync(self.__serial_interface.write,args=(command,))
 
     @_inform_attrerror
     def change_settings(self,modifications: dict[Settings,Any]):
@@ -226,7 +189,7 @@ class Pump(AsyncRunner,Teardown):
         modified_keys = set(modifications.keys())
 
         #----------------- PID settings --------------------
-        if _contains_any(modified_keys,[Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_REFILL_PUMP,Settings.CATHOLYTE_REFILL_PUMP,Settings.BASE_CONTROL_DUTY,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN]):
+        if _contains_any(modified_keys,[*PID_PUMPS,Settings.BASE_CONTROL_DUTY,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN]):
             self.stop_pid()
         if _contains_any(modified_keys,[Settings.AVERAGE_WINDOW_WIDTH,Settings.PID_REFILL_COOLDOWN]):
             cd_possibilities = read_settings(Settings.PID_REFILL_COOLDOWN,Settings.AVERAGE_WINDOW_WIDTH)
@@ -250,8 +213,11 @@ class Pump(AsyncRunner,Teardown):
         level_mods = {key:modifications[key] for key in modified_keys if key in LEVEL_SETTINGS}
         level_args = (level_mods,new_capture) if new_capture else (level_mods,)
         self.run_sync(self.__level.set_parameters,args = level_args)
-        if _contains_any(LOGGING_SETTINGS,modifications):
-            logger_mods = {key:modifications[key] for key in modified_keys if key in LOGGING_SETTINGS}
+
+        # ----------------- Logging settings ------------------
+        LOGGING_MODS = set([*LOGGING_SETTINGS,*PID_PUMPS])
+        if _contains_any(LOGGING_MODS,modifications):
+            logger_mods = {key:modifications[key] for key in modified_keys if key in LOGGING_MODS}
             self.run_sync(self.__logger.set_parameters,args=(logger_mods,))
 
     @_inform_attrerror
@@ -275,7 +241,6 @@ class Pump(AsyncRunner,Teardown):
         self.stop_levels()
         self.stop_pid()
         self.stop_polling()
-        #TODO check race condition
         self.stop_event_loop()
 
     @_ignore_attrerror
@@ -343,9 +308,7 @@ class Pump(AsyncRunner,Teardown):
 
     def __close_without_error(self,pmp: PumpNames):
         try:
-            self.__serial_interface.write(GenericInterface.format_duty(pmp.value,0))
-            new_state = ActiveState({pmp:0})
-            self.queue.put(new_state)
+            self.__serial_interface.write(WriteCommand(pmp.value,0))
         except InterfaceException:
             pass
 

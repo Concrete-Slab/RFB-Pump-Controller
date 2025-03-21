@@ -1,14 +1,14 @@
 import customtkinter as ctk
-from .themes import ApplicationTheme
+from ..ui_layout.themes import ApplicationTheme
 from typing import Callable, TypeVar
-T = TypeVar("T")
 
+T = TypeVar("T")
 
 class ValueSetterWidget(ctk.CTkFrame):
 
     def __init__(self,
                  parent,
-                 value_var: ctk.DoubleVar,
+                 value_var: ctk.DoubleVar|ctk.IntVar|None = None,
                  value_callback: Callable[[float],None]|None = None,
                  validation_fun: Callable[[str], bool]|None = None,
                  width = 300,
@@ -47,7 +47,8 @@ class ValueSetterWidget(ctk.CTkFrame):
         self._entry.delete(0, ctk.END)
         self.focus_set()
         if val != '':
-            self.value_var.set(value=int(val))
+            if self.value_var:
+                self.value_var.set(value=int(val))
             if self.value_callback is not None:
                 self.value_callback(val)
     

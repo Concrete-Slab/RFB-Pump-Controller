@@ -1,3 +1,4 @@
+import copy
 from enum import Enum
 import json
 from typing import Any
@@ -6,7 +7,7 @@ from .file_interface import open_local
 from .pump_config import PumpNames, PumpConfig
 
 
-
+# TODO: make the Settings class support typing. Use instance-based dataclass of settings rather than dicts of [Settings,Any], with default values for every setting
 
 class CaptureBackend(Enum):
     ANY = "Default"
@@ -91,6 +92,7 @@ class Settings(Enum):
     """Period between rows in logger csv"""
     IMAGE_FILTER = "image_filter"
     """The algorithm used to filter the level from fluid images"""
+    FILECAPTURE_DIRECTORY = "filecapture_directory"
 
 __thispath = Path().absolute().parent
 DEFAULT_SETTINGS: dict[Settings, Any] = {
@@ -131,6 +133,7 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.LOG_IMAGES: False,
     Settings.LOGGING_PERIOD: 5.0,
     Settings.IMAGE_FILTER: ImageFilterType.LINKNET,
+    Settings.FILECAPTURE_DIRECTORY: None
 }
 
 _LOG_DIRECTORIES = set([Settings.LEVEL_DIRECTORY,Settings.PID_DIRECTORY,Settings.SPEED_DIRECTORY,Settings.IMAGE_DIRECTORY])
@@ -140,7 +143,8 @@ PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_
 PID_SETTINGS = set([*PID_PUMPS,Settings.REFILL_STOP_ON_FULL,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
 CAMERA_SETTINGS = set([Settings.IMAGE_SAVE_PERIOD,Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
 CV_SETTINGS = set([Settings.LEVEL_STABILISATION_PERIOD,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH])
-LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS,Settings.LOG_IMAGES,Settings.IMAGE_DIRECTORY])
+LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS,Settings.LOG_IMAGES,Settings.IMAGE_DIRECTORY,Settings.FILECAPTURE_DIRECTORY])
+_PATH_SETTINGS = set([*_LOG_DIRECTORIES,Settings.FILECAPTURE_DIRECTORY])
 
 def read_settings(*keys: Settings) -> dict[Settings,Any]:
     all_settings = __open_settings_filesafe()
@@ -191,7 +195,7 @@ def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
         if isinstance(pmp,PumpNames):
             final_settings[pmpsetting.value] = pmp.value
     # convert from Path to str
-    for pathsetting in _LOG_DIRECTORIES:
+    for pathsetting in _PATH_SETTINGS:
         path = final_settings[pathsetting.value]
         if isinstance(path,Path):
             final_settings[pathsetting.value] = path.as_posix()
@@ -213,15 +217,18 @@ def __open_settings_filesafe() -> dict[Settings,Any]:
     try:
         with open_local(SETTINGS_FILENAME,"r") as f:
             settings_in = dict(json.load(f))
-        #TODO change to just modifying indices instead of appending
-        settings_out = {}
+        # settings_out = {}
+        # for key in DEFAULT_SETTINGS.keys():
+        #     if key.value in settings_in:
+        #         settings_out = {**settings_out,key:settings_in[key.value]}
+        #     else:
+        #         settings_out = {**settings_out,key:DEFAULT_SETTINGS[key]}
+        settings_out = copy.copy(DEFAULT_SETTINGS)
         for key in DEFAULT_SETTINGS.keys():
             if key.value in settings_in:
-                settings_out = {**settings_out,key:settings_in[key.value]}
-            else:
-                settings_out = {**settings_out,key:DEFAULT_SETTINGS[key]}
+                settings_out[key] = settings_in[key.value]
     except:
-        settings_out = DEFAULT_SETTINGS
+        settings_out = copy.copy(DEFAULT_SETTINGS)
     return settings_out
 
 def __cast_to_correct_type(key,value):
@@ -230,10 +237,10 @@ def __cast_to_correct_type(key,value):
             # value = PumpNames(value)
             # cast to pump enum
             value = PumpConfig().pumps(value)
-        except  ValueError:
+        except ValueError:
             # value is not in pump enum
             value = None
-    elif key in _LOG_DIRECTORIES:
+    elif key in _PATH_SETTINGS:
         if value is not None:
             value = Path(value)
         else:
