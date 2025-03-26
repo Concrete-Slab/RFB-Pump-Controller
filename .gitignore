@@ -7,3 +7,5 @@ settings.json
 /.vscode/
 vision_model/Datasets/**/*.json
 **/local
+build/
+*.egg-info
