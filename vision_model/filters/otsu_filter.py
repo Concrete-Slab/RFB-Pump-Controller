@@ -19,10 +19,10 @@ class OtsuFilter(LevelFilter):
         num_zero = np.zeros(frm_width)
         for i,pixel_column in enumerate(mask.T):
             num_zero[i] = np.size(pixel_column)-cv2.countNonZero(pixel_column)
-        npixels = float(np.median(num_zero))
+        npixels = int(np.median(num_zero))
         bbox = (0,frm_height-npixels,frm_width,npixels)
         mask = np.max(mask)-mask
 
-        imgout = self._place_mask_on_image(imgout,mask)
-        imgout = self._place_bbox_on_image(imgout,bbox)
+        imgout = self._place_mask_on_image(imgout,mask,color=(255,0,0),alpha=0.25)
+        imgout = cv2.rectangle(imgout,bbox,(0,255,0),thickness=1)
         return imgout,scale*npixels

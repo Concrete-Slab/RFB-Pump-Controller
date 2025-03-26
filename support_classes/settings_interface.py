@@ -1,5 +1,5 @@
 import copy
-from enum import Enum
+from enum import StrEnum
 import json
 from typing import Any
 from pathlib import Path
@@ -7,9 +7,9 @@ from .file_interface import open_local
 from .pump_config import PumpNames, PumpConfig
 
 
-# TODO: make the Settings class support typing. Use instance-based dataclass of settings rather than dicts of [Settings,Any], with default values for every setting
+# TODO: make the Settings class support typing. Perhaps use instance-based dataclass of settings rather than dicts of [Settings,Any], with default values for every setting
 
-class CaptureBackend(Enum):
+class CaptureBackend(StrEnum):
     ANY = "Default"
     PYGAME_WINDOWS_NATIVE = "Microsoft Media Foundation (pygame)"
     PYGAME_LINUX_NATIVE = "Video for Linux (pygame)"
@@ -21,16 +21,16 @@ class CaptureBackend(Enum):
     CV2_DSHOW = "DirectShow (OpenCV)"
     CV2_QT = "QuickTime (OpenCV)"
 
-class ImageFilterType(Enum):
+class ImageFilterType(StrEnum):
     OTSU = "otsu"
     LINKNET = "linknet"
-    NONE = "none (no fluid detection)"
+    NONE = "none"
 
 CV2_BACKENDS = set([CaptureBackend.CV2_MSMF,CaptureBackend.CV2_V4L2,CaptureBackend.CV2_VFW,CaptureBackend.CV2_WINRT,CaptureBackend.CV2_QT,CaptureBackend.CV2_DSHOW])
 
 SETTINGS_FILENAME = "settings.json"
 
-class Settings(Enum):
+class Settings(StrEnum):
     LOG_LEVELS = "log_levels"
     LOG_PID = "log_pid"
     LOG_SPEEDS = "log_speeds"
@@ -132,7 +132,7 @@ DEFAULT_SETTINGS: dict[Settings, Any] = {
     Settings.IMAGE_DIRECTORY: (__thispath/"pumps/experiment_0/images").as_posix(),
     Settings.LOG_IMAGES: False,
     Settings.LOGGING_PERIOD: 5.0,
-    Settings.IMAGE_FILTER: ImageFilterType.LINKNET,
+    Settings.IMAGE_FILTER: ImageFilterType.OTSU,
     Settings.FILECAPTURE_DIRECTORY: None
 }
 
@@ -143,7 +143,8 @@ PID_PUMPS = set([Settings.ANOLYTE_PUMP,Settings.CATHOLYTE_PUMP,Settings.ANOLYTE_
 PID_SETTINGS = set([*PID_PUMPS,Settings.REFILL_STOP_ON_FULL,Settings.BASE_CONTROL_DUTY,Settings.REFILL_TIME,Settings.REFILL_DUTY,Settings.REFILL_PERCENTAGE_TRIGGER,Settings.PID_REFILL_COOLDOWN,Settings.PROPORTIONAL_GAIN,Settings.INTEGRAL_GAIN,Settings.DERIVATIVE_GAIN])
 CAMERA_SETTINGS = set([Settings.IMAGE_SAVE_PERIOD,Settings.IMAGE_RESCALE_FACTOR,Settings.CAMERA_BACKEND,Settings.CAMERA_INTERFACE_MODULE,Settings.VIDEO_DEVICE,Settings.AUTO_EXPOSURE,Settings.EXPOSURE_TIME])
 CV_SETTINGS = set([Settings.LEVEL_STABILISATION_PERIOD,Settings.SENSING_PERIOD,Settings.AVERAGE_WINDOW_WIDTH])
-LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS,Settings.LOG_IMAGES,Settings.IMAGE_DIRECTORY,Settings.FILECAPTURE_DIRECTORY])
+#TODO should log images and image directory be included here?
+LEVEL_SETTINGS = set([*CAMERA_SETTINGS,*CV_SETTINGS,Settings.LOG_IMAGES,Settings.IMAGE_DIRECTORY,Settings.FILECAPTURE_DIRECTORY,Settings.IMAGE_FILTER])
 _PATH_SETTINGS = set([*_LOG_DIRECTORIES,Settings.FILECAPTURE_DIRECTORY])
 
 def read_settings(*keys: Settings) -> dict[Settings,Any]:
@@ -169,22 +170,22 @@ def read_setting(setting: Settings):
 
 def modify_settings(new_changes: dict[Settings,Any]) -> dict[Settings,Any]:
     # read all settings
-    all_settings = read_settings()
+    all_settings = __open_settings_filesafe()
     # make sure the input dictionary has correct types
-    for nkey in new_changes.keys():
-        new_changes[nkey] = __cast_to_correct_type(nkey,new_changes[nkey])
-
-    modifications: dict[Settings,Any] = {}
-
     new_keys = set(new_changes.keys())
     common_keys = set([key for key in new_keys if key in all_settings.keys()])
 
+    modifications: dict[Settings,Any] = {}
+
+
     for key in common_keys:
         # find values that are modified from all_settings
-        new_value = new_changes[key]
+        new_value = __cast_to_correct_type(key,new_changes[key])
+
+        old_value = __cast_to_correct_type(key,all_settings[key])
         
-        if new_value!=all_settings[key]:
-            modifications = {**modifications, key: __cast_to_correct_type(key,new_value)}
+        if new_value!=old_value:
+            modifications = {**modifications, key: new_value}
             # save the modified value to all_settings
             all_settings[key] = new_value
 
@@ -232,9 +233,15 @@ def __open_settings_filesafe() -> dict[Settings,Any]:
     return settings_out
 
 def __cast_to_correct_type(key,value):
+    try:
+        return __cast_internal(key,value)
+    except (ValueError, RuntimeError):
+        #TODO maybe not great to have a silent error?
+        return DEFAULT_SETTINGS[key]
+
+def __cast_internal(key,value):
     if key in PID_PUMPS and value is not None:
         try:
-            # value = PumpNames(value)
             # cast to pump enum
             value = PumpConfig().pumps(value)
         except ValueError:

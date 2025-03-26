@@ -13,30 +13,22 @@ import pygame.camera as camera
 from pygame import _camera_opencv
 import pygame as pg
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Protocol
+from typing import Any, Callable
 import platform
 import time
 from PIL import Image
 import numpy as np
 
-class _CapFun(Protocol):
-    def __call__(vd_num: int, auto_exposure: bool, exposure_time: int, backend: str, scale_factor: float) -> "Capture": ...
-def _capfun(fn: _CapFun) -> _CapFun:
-    return _CapFun
-
-@_capfun
 def _setup_cv2(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in CV2Capture.get_backends() else CaptureBackend.ANY
     return CV2Capture(vd_num if vd_num >= 0 else 0,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
-@_capfun
 def _setup_pygame(vd_num: int,auto_exposure: bool,exposure_time: int, backend: str,scale_factor: float) -> "Capture":
     actual_backend = backend if backend in PygameCapture.get_backends() else CaptureBackend.ANY
     # lst_devices = PygameCapture.get_cameras(backend=actual_backend)
     # actual_device = vd_num if (vd_num < len(lst_devices) and vd_num >= 0) else 0
     actual_device = vd_num if vd_num > 0 else 0
     return PygameCapture(actual_device,auto_exposure=auto_exposure,exposure_time=exposure_time,backend=actual_backend,scale_factor = scale_factor)
-@_capfun
-def _setup_file(*args) -> "Capture":
+def _setup_file(vd_num: int, auto_exposure: bool, exposure_time: int, backend: str, scale_factor: float) -> "Capture":
     default_directory = read_setting(Settings.FILECAPTURE_DIRECTORY)
     return FileCapture(default_directory,".png")
 
@@ -196,7 +188,7 @@ def _backend_to_cv2(be: CaptureBackend) -> int:
         case CaptureBackend.CV2_QT:
             return cv2.CAP_QT
         case _:
-            return CaptureBackend.ANY
+            cv2.CAP_ANY
 
 class PygameCapture(Capture):
 
@@ -268,6 +260,7 @@ class PygameCapture(Capture):
     def will_block(cls,backend: CaptureBackend) -> bool:
         # get whether a call to get_cameras will result in a lengthy, blocking call
         new_backend = _backend_to_pygame(backend)
+        #TODO check the logic for this (at the very least the types are not matching)
         return not (new_backend and cls.__recent_backend and new_backend == cls.__recent_backend and new_backend != "OpenCV") or (new_backend is None and cls.__recent_backend is None and len(cls.__recent_camera_list)>0)
 
     @classmethod

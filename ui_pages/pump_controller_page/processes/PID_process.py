@@ -1,6 +1,6 @@
 import copy
 from ui_pages.pump_controller_page.processes.base_process import BaseProcess
-from ui_pages.pump_controller_page.CONTROLLER_EVENTS import CEvents, ProcessName
+from ui_pages.pump_controller_page.CONTROLLER_EVENTS import ProcessName
 from support_classes import PumpNames, Settings, PumpConfig, read_settings, PID_SETTINGS, PID_PUMPS, modify_settings
 from typing import Any, Callable
 from ui_root import AlertBoxBase, AlertBox
@@ -14,30 +14,17 @@ class PIDProcess(BaseProcess):
     
     def start(self):
         (state_running,_) = self._pump_context.start_pid()
-        if len(self._removal_callbacks) == 0:
-            self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
-    
-    def __handle_running(self,newstate: bool):
-        if newstate:
-            self._controller_context.notify_event(CEvents.ProcessStarted(ProcessName.PID))
-        else:
-            self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.PID))
+        self._monitor_running(state_running)
     
     def close(self):
         self._pump_context.stop_pid()
     
+    @classmethod
+    def process_name(cls):
+        return ProcessName.PID
     @property
-    def has_settings(self) -> bool:
-        return True
-    
-    def open_settings(self):
-        on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.PID))
-        on_success = self.__on_settings_modified
-        self._controller_context._create_alert(PIDSettingsBox(on_success=on_success,on_failure=on_failure))
-    
-    def __on_settings_modified(self,modifications: dict[Settings,Any]):
-        self._controller_context.notify_event(CEvents.SettingsModified(modifications))
-        self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.PID))
+    def settings_constructor(self):
+        return PIDSettingsBox.default
 
 
 class _PIDSettingsFrame(AlertBoxBase[dict[Settings,Any]]):

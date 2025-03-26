@@ -4,7 +4,7 @@ import threading
 import atexit
 
 
-# Use this script to emulate the Teensyduino sending data over a serial port
+# Use this script to emulate the microcontroller sending data over a serial port
 # Designed to be used in conjunction with a virtual serial port tool, such as Virtual Serial Port Driver
 # Pipe the port in this script to another COM port on this PC, then expose that port and use it in the application
 def main():
@@ -18,7 +18,7 @@ def main():
                 print(to_write)
 
     # Open the serial port
-    ser = serial.Serial('COM2', 9600)  # Replace 'COMx' with your COM port to be piped
+    ser = serial.Serial('COM2', 9600)  # Replace 'COM2' with your COM port to be piped
     atexit.register(ser.close)
     ports = "abcdef"
     lock = threading.Lock()

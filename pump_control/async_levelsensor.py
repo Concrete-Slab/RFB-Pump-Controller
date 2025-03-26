@@ -2,7 +2,6 @@ import os
 from vision_model.level_filters import LevelFilter
 from support_classes import Generator, GeneratorException, Settings, DEFAULT_SETTINGS, Capture, FileCapture, ImageFilterType, CaptureException
 from support_classes.camera_interface import FileCapture
-import cv2_gui.cv2_multiprocessing as cvmp
 from .timeavg import TimeAvg
 from typing import Any
 import cv2

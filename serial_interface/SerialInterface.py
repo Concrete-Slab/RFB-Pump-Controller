@@ -24,12 +24,12 @@ class _ThreadsafeAsyncEvent(threading.Event):
         self.__loop = loop
 
     def set(self):
-        if self.__loop:
+        if self.__loop and self.__loop.is_running():
             self.__loop.call_soon_threadsafe(self.async_event.set)
         return super().set()
     
     def clear(self):
-        if self.__loop:
+        if self.__loop and self.__loop.is_running():
             self.__loop.call_soon_threadsafe(self.async_event.clear)
         return super().clear()
 

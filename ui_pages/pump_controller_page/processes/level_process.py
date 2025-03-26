@@ -5,9 +5,10 @@ from pump_control.async_levelsensor import LevelOutput, LevelReading
 from support_classes.settings_interface import read_setting
 from ui_pages.pump_controller_page.processes.base_process import BaseProcess
 from ui_pages.pump_controller_page.CONTROLLER_EVENTS import CEvents, ProcessName
-from support_classes import Settings, read_settings, modify_settings, CAMERA_SETTINGS, SharedState, CV2Capture, PygameCapture, CaptureBackend, DEFAULT_SETTINGS, LEVEL_SETTINGS, Capture
+from support_classes import Settings, read_settings, modify_settings, CAMERA_SETTINGS, SharedState, CV2Capture, PygameCapture, CaptureBackend, DEFAULT_SETTINGS, LEVEL_SETTINGS, Capture, ImageFilterType
 from pump_control import Pump
 from typing import Any, Callable
+from typing_extensions import override
 from ui_root import AlertBoxBase, AlertBox, UIController, UIRoot, event_group
 import customtkinter as ctk
 from ui_pages.ui_layout import WidgetGroup, make_and_group, make_and_grid, make_entry, make_menu, make_segmented_button, make_fileselect, validator_function, ApplicationTheme
@@ -57,11 +58,10 @@ class LevelProcess(BaseProcess):
         if self.level_data:
             (state_running,state_levels) = self._pump_context.start_levels(*self.level_data.as_tuple())
             self.display_state = state_levels.duplicate()
-            
-            if len(self._removal_callbacks) == 0:
-                self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
+            self._monitor_running(state_running)
     
-    def __handle_running(self,isrunning: bool):
+    @override
+    def _handle_running(self,isrunning: bool):
         if isrunning and self.display_state:
             self._controller_context.notify_event(CEvents.ProcessStarted(ProcessName.LEVEL))
 
@@ -77,19 +77,13 @@ class LevelProcess(BaseProcess):
     def close(self):
         self._pump_context.stop_levels()
     
+    @classmethod
+    def process_name(cls):
+        return ProcessName.LEVEL
     @property
-    def has_settings(self) -> bool:
-        return True
-    
-    def open_settings(self):
-        on_successful = self.__on_settings_modified
-        on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.LEVEL))
-        settings_box = LevelSettingsBox(on_failure=on_failure,on_success=on_successful)
-        box = self._controller_context._create_alert(settings_box)
+    def settings_constructor(self):
+        return LevelSettingsBox.default
 
-    def __on_settings_modified(self, modifications: dict[Settings,Any]):
-        self._controller_context.notify_event(CEvents.SettingsModified(modifications))
-        self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.LEVEL))
 
 Rect = tuple[int,int,int,int]
 
@@ -284,11 +278,15 @@ class LevelSettingsController(UIController):
 class _LevelSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
 
 
-    __NUM_CAMERA_SETTINGS = 2
+    __NUM_CAMERA_SETTINGS = 3
     ALERT_TITLE = "Level Sensing Settings"
 
     VD_LOADING = "Loading..."
     NO_VD_FOUND = "No video devices detected"
+
+    OTSU_DISPLAY = "Non-parametric thresholding"
+    LINKNET_DISPLAY = "LinkNet FCN"
+    NONE_DISPLAY = "None (no fluid detection)"
 
     def __init__(self, master: ctk.CTk, controller: UIController, *args, on_success: Callable[[dict[Settings,Any]], None] | None = None, on_failure: Callable[[None], None] | None = None, fg_color: str | tuple[str, str] | None = None, **kwargs):
         super().__init__(master, *args, on_success=on_success, on_failure=on_failure, fg_color=fg_color, **kwargs)
@@ -302,10 +300,35 @@ class _LevelSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
         prev_exposure_time: int = all_settings[Settings.EXPOSURE_TIME]
         prev_sensing_period: float = all_settings[Settings.SENSING_PERIOD]
         prev_average_period: float = all_settings[Settings.AVERAGE_WINDOW_WIDTH]
-        prev_stabilisation_period = all_settings[Settings.LEVEL_STABILISATION_PERIOD]
+        prev_stabilisation_period: float = all_settings[Settings.LEVEL_STABILISATION_PERIOD]
         prev_backend: CaptureBackend = all_settings[Settings.CAMERA_BACKEND]
         prev_rescale_factor: float = all_settings[Settings.IMAGE_RESCALE_FACTOR]
+        prev_filter: ImageFilterType = all_settings[Settings.IMAGE_FILTER]
         # prev_period: float = all_settings[Settings.IMAGE_SAVE_PERIOD]
+
+        def display_name_from_filter(filter: ImageFilterType) -> str:
+            match filter:
+                case ImageFilterType.OTSU:
+                    return self.OTSU_DISPLAY
+                case ImageFilterType.LINKNET:
+                    return self.LINKNET_DISPLAY
+                case ImageFilterType.NONE:
+                    return self.NONE_DISPLAY
+                case _:
+                    return self.NONE_DISPLAY
+        def filter_from_display_name(display_name: str) -> ImageFilterType:
+            match display_name:
+                case self.OTSU_DISPLAY:
+                    return ImageFilterType.OTSU
+                case self.LINKNET_DISPLAY:
+                    return ImageFilterType.LINKNET
+                case self.NONE_DISPLAY:
+                    return ImageFilterType.NONE
+                case _:
+                    return ImageFilterType.NONE
+                
+        prev_filter_displayname = display_name_from_filter(prev_filter)
+        filter_displaynames = [display_name_from_filter(f) for f in ImageFilterType]
 
         segment_frames, self.confirm_button, _ = self.generate_layout("Camera Settings","Computer Vision Settings",confirm_command=self.__confirm_selections)
         camera_frame = segment_frames[0]
@@ -313,7 +336,8 @@ class _LevelSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
         
         self.rescale_var = make_and_grid(make_entry,camera_frame,"Image Rescaling Factor",Settings.IMAGE_RESCALE_FACTOR,prev_rescale_factor,0,map_fun=float,entry_validator = _validate_scale_factor, on_return = self.__confirm_selections)
         # self.save_period_var = make_and_grid(make_entry, camera_frame, "Period Between Image Saves", Settings.IMAGE_SAVE_PERIOD, prev_period, 2, map_fun=float, entry_validator = _validate_time_float, on_return = self.__confirm_selections, units="s")
-        self.interface_var = make_and_grid(make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,1,values=Capture.supported_interfaces(debug=controller.debug))
+        self.filter_var = make_and_grid(make_menu,camera_frame,"Detector Type",Settings.IMAGE_FILTER,prev_filter_displayname,1,values=filter_displaynames,map_fun=lambda ift_str: filter_from_display_name(ift_str))
+        self.interface_var = make_and_grid(make_menu,camera_frame,"Camera Module Interface",Settings.CAMERA_INTERFACE_MODULE,prev_interface,2,values=Capture.supported_interfaces(debug=controller.debug))
         self.interface_var.trace_add(self.__interface_changed)
 
         self.sense_period_var = make_and_grid(make_entry,cv_frame,"Image Capture Period",Settings.SENSING_PERIOD,str(prev_sensing_period),1,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
@@ -321,7 +345,7 @@ class _LevelSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
         self.stabilisation_var = make_and_grid(make_entry,cv_frame,"Stabilisation Period",Settings.LEVEL_STABILISATION_PERIOD, str(prev_stabilisation_period),3,entry_validator = _validate_time_float,units="s",map_fun=float,on_return=self.__confirm_selections)
 
         # add self.save_period_var back
-        self.permanent_vars = [self.rescale_var,self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
+        self.permanent_vars = [self.rescale_var,self.filter_var,self.interface_var,self.sense_period_var,self.average_var,self.stabilisation_var]
         
         #----------CV2 Settings-------------
         self.cv2_widget_group = WidgetGroup(initial_row=self.__NUM_CAMERA_SETTINGS)
@@ -524,7 +548,7 @@ class _LevelSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
                 entry_fgcolor = ApplicationTheme.MANUAL_PUMP_COLOR if var.is_valid() else ApplicationTheme.ERROR_COLOR
                 var.widget.configure(border_color=entry_fgcolor)
 
-class LevelSettingsBox(AlertBox):
+class LevelSettingsBox(AlertBox[dict[Settings,Any]]):
     def __init__(self, on_success = None, on_failure = None, auto_resize=True):
         super().__init__(on_success, on_failure, auto_resize)
     def create(self, root):

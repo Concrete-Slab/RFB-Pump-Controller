@@ -277,7 +277,6 @@ class Page(ABC):
     def destroy(self) -> None:
         pass
 
-
 class AlertBox(ABC,Generic[SuccessSignature]):
     def __init__(self, on_success: Callable[SuccessSignature,None]|None = None, on_failure: Callable[[None],None]|None = None ,auto_resize = True):
         super().__init__()
@@ -287,6 +286,9 @@ class AlertBox(ABC,Generic[SuccessSignature]):
     @abstractmethod
     def create(self, root: UIRoot) -> AlertBoxBase[SuccessSignature]:
         pass
+    @classmethod
+    def default(cls, on_success: Callable[SuccessSignature,None]|None = None, on_failure: Callable[[None],None]|None = None):
+        return cls(on_success=on_success,on_failure=on_failure)
 
 
 class UIError(KeyError):

@@ -1,5 +1,5 @@
 from typing import Iterable
-from support_classes.settings_interface import CAMERA_SETTINGS
+from support_classes.settings_interface import CAMERA_SETTINGS, Settings
 from ui_root import UIRoot, UIController
 from pump_control import Pump, PumpState, ReadyState, ErrorState, PIDException, LevelException, ReadException
 from .CONTROLLER_EVENTS import CEvents, ProcessName
@@ -99,8 +99,9 @@ class ControllerPageController(UIController):
                 if item in lst2:
                     return True
             return False
-        if _contains_any(modifications,CAMERA_SETTINGS):
+        if _contains_any(modifications,(*CAMERA_SETTINGS,Settings.IMAGE_FILTER)):
             # if camera settings are modified, image scaling/size/position may have changed, so need to reselect data
+            # if the filter type has changed, then the type of region required may be different
             self.__level_process.level_data = None
         self.pump.change_settings(modifications)
         

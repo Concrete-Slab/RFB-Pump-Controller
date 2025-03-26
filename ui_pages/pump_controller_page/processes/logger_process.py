@@ -1,5 +1,5 @@
 from ui_pages.pump_controller_page.processes import BaseProcess
-from ui_pages.pump_controller_page.CONTROLLER_EVENTS import CEvents, ProcessName
+from ui_pages.pump_controller_page.CONTROLLER_EVENTS import ProcessName
 from ui_pages.ui_layout import make_and_grid, make_entry, ApplicationTheme, validator_function
 from typing import Any, Callable
 from support_classes import Settings, read_settings, LOGGING_SETTINGS, modify_settings
@@ -13,34 +13,17 @@ class DataProcess(BaseProcess):
         return "Data Logging"
     def start(self):
         state_running = self._pump_context.start_logging()
-        if len(self._removal_callbacks) == 0:
-            self._removal_callbacks.append(self._controller_context._add_state(state_running,self.__handle_running))
+        self._monitor_running(state_running)
     
     def close(self):
-        if self._pump_context and self._controller_context:
-            self._pump_context.stop_logging()
+        self._pump_context.stop_logging()
 
-    def __handle_running(self,newstate: bool):
-        if self._controller_context:
-            if newstate:
-                self._controller_context.notify_event(CEvents.ProcessStarted(ProcessName.DATA))
-            else:
-                self._controller_context.notify_event(CEvents.ProcessClosed(ProcessName.DATA))
-        
-
+    @classmethod
+    def process_name(cls):
+        return ProcessName.DATA
     @property
-    def has_settings(self) -> bool:
-        return True
-    
-    def open_settings(self):
-        on_success = self.__on_settings_modified
-        on_failure = lambda: self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.DATA))
-        self._controller_context._create_alert(DataSettingsBox(on_success=on_success,on_failure=on_failure))
-
-    def __on_settings_modified(self,modifications: dict[Settings,Any]):
-        if self._controller_context:
-            self._controller_context.notify_event(CEvents.SettingsModified(modifications))
-            self._controller_context.notify_event(CEvents.CloseSettings(ProcessName.DATA))
+    def settings_constructor(self):
+        return DataSettingsBox.default
 
 
 class _DataSettingsFrame(AlertBoxBase[dict[Settings,Any]]):
