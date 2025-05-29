@@ -1,18 +1,23 @@
-import lightning.pytorch as L
 import Datasets.dataset as ds
 from pathlib import Path
 from GLOBALS import Configuration
-import albumentations as A
 import torch
 import torch.utils.data as data
 from abc import ABC, abstractmethod
 import math
+from vision_model.ImageTransforms import Transform
+from typing import Generic, TypeVar
+
+## the class below is intended to function *like* a lightning.pytorch.LightningDataModule
+## it has been modified so that lightining is not a dependency for this project
+
+A = TypeVar("A")
 
 DEFAULTS = Configuration()
-class DataModule(L.LightningDataModule,ABC):
+class DataModule(ABC,Generic[A]):
     def __init__(self,
         dataset_path: Path,
-        transforms: A.BasicTransform|None = None,
+        transforms: Transform|None = None,
         batch_size: int = DEFAULTS.batch_size,
         validation_split: float = DEFAULTS.proportion_validation,
         test_split: float = DEFAULTS.proportion_testing,
@@ -48,7 +53,7 @@ class DataModule(L.LightningDataModule,ABC):
 
     @property
     @abstractmethod
-    def dataset(self) -> ds.BasicDataset:
+    def dataset(self) -> ds.BasicDataset[A]:
         pass
     @property
     def steps_in_epoch(self) -> int:
@@ -59,7 +64,7 @@ class DataModule(L.LightningDataModule,ABC):
         return math.ceil(sz/self.batch_size)
 
     @classmethod
-    def from_configuration(cls,c: Configuration,transforms: A.BasicTransform|None = None):
+    def from_configuration(cls,c: Configuration,transforms: Transform|None = None):
         return cls(c.dataset,transforms,c.batch_size,c.proportion_validation,c.proportion_testing,c.random_seed,c.num_workers,c.pin_memory,c.persistent_workers,c.shuffle_dataset,c.ensure_factor,c.alpha_channel)
             
     
@@ -103,12 +108,12 @@ class DataModule(L.LightningDataModule,ABC):
             num_workers=self.num_workers
         )
 
-class SegmentationDataModule(DataModule):
+class SegmentationDataModule(DataModule[torch.Tensor]):
     @property
     def dataset(self):
         return ds.MaskDataset(self.dataset_path,self.transforms,self.dataset_ensure_factor,self.alpha_channel)
     
-class BoxDataModule(DataModule):
+class BoxDataModule(DataModule[torch.Tensor]):
     @property
     def dataset(self):
         return ds.BoxDataset(self.dataset_path,self.transforms,self.dataset_ensure_factor,self.alpha_channel)

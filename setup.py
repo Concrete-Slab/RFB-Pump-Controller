@@ -35,16 +35,13 @@ class DependencyInstallCommand(install):
     def run(self):
         check_and_install_external_dependency("git","git",url="https://git-scm.com/downloads")
         check_and_install_external_dependency("git-lfs","git-LFS",initialisation_command=["git-lfs","install"],url="https://git-lfs.com/")
-        # install albumentations without opencv-python-headless
-        install_package("albumentations",opts="-U")
-        # proceed with installation as normal
         install.run(self)
 
 def get_install_requires():
-    """Get the list of required packages, excluding albumentations and opencv-python-headless"""
+    """Get the list of required packages"""
     from pkg_resources import parse_requirements
     with open("requirements.txt") as f:
-        requires = [str(req.name) for req in parse_requirements(f) if req.name not in ("albumentations","opencv-python-headless")]
+        requires = [str(req.project_name) for req in parse_requirements(f)]
     return requires
 
 with open("README.md", "r") as fh:
@@ -52,7 +49,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="rfb-controller",
-    version="0.1.0",
+    version="1.0.0",
     author="Thomas Williams",
     author_email="thomaswilliams3982@gmail.com",
     description="Control RFB diaphragm pumps from a GUI, with options for volume balancing and solvent refill",

@@ -1,9 +1,9 @@
 import torch
 from numpy import ndarray
-from vision_model.segmentation_model import SegmentationModule
 import segmentation_models_pytorch as smp
 from vision_model.level_filters import LevelFilter
-from vision_model.Datasets.dataset import to_torch,normalise,get_bbox
+from vision_model.segmentation_model import SegmentationModule
+from vision_model.GLOBALS import to_torch,normalise,get_bbox
 import numpy as np
 from pathlib import Path
 import copy
@@ -12,28 +12,29 @@ class _SegmentationFilter(LevelFilter):
 
     filter_size = (320,320)
 
-    threshold = torch.Tensor([0.5]).cpu().detach()
+    threshold = torch.Tensor([0.5]).detach()
 
-    def __init__(self,ckpt_path: Path, base_model, ignore_level=False):
+    def __init__(self,ckpt_path: Path, base_model: torch.nn.Module, ignore_level=False, use_cuda = True):
         super().__init__(ignore_level)
-        self.lightning_module = None
+        self.module = None
         self.ckpt_path = ckpt_path
         self.base_model = base_model
+        self.device = 'cuda' if torch.cuda.is_available() and use_cuda else 'cpu'
 
     def setup(self):
-        self.lightning_module = SegmentationModule.load_from_checkpoint(self.ckpt_path,model=self.base_model)
-        self.lightning_module.eval()
-        self.lightning_module.cpu()
+        self.module = SegmentationModule.load_from_checkpoint(self.ckpt_path,self.base_model,self.device)
+        self.threshold = self.threshold.to(self.device)
+        self.module.eval()
 
     @torch.no_grad
     def filter(self, img: ndarray, scale: float) -> tuple[ndarray, float]:
-        timg = to_torch(normalise(copy.copy(img)))
-        timg = timg.cpu().unsqueeze(0)
-        prediction = self.lightning_module.forward(timg)
+        timg = to_torch(normalise(copy.copy(img)),device=self.device)
+        timg = timg.unsqueeze(0)
+        prediction = self.module.forward(timg)
         prediction = torch.sigmoid(prediction).detach()
-        prediction = (prediction>=self.threshold).float().cpu().detach()
-        timg = timg.squeeze()
-        prediction = prediction.squeeze()
+        prediction = (prediction>=self.threshold).float().detach()
+        timg = timg.squeeze().cpu()
+        prediction = prediction.squeeze().cpu()
 
         while len(prediction.shape)<3:
             prediction = prediction.unsqueeze(0)
@@ -71,7 +72,7 @@ def _median_box(mask: np.ndarray,fmt="coco") -> tuple[int,int,int,int]:
     return bbox_out
 
 def LinkNetFilter(ignore_level=False):
-    return _SegmentationFilter(Path(__file__).parent/"linknet_320x320.ckpt",smp.Linknet(encoder_name="resnet101",encoder_weights=None),ignore_level=ignore_level)
+    return _SegmentationFilter(Path(__file__).parent/"linknet_320x320.pth.tar",smp.Linknet(encoder_name="resnet101",encoder_weights=None),ignore_level=ignore_level)
     
 
         

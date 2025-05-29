@@ -1,6 +1,5 @@
 import random
 import torch
-import lightning.pytorch as L
 from segmentation_model import SegmentationModule
 import segmentation_models_pytorch as smp
 from Datasets.dataset import MaskDataset, to_torch, normalise
@@ -28,7 +27,7 @@ class LogFolder:
         if not folder_path.is_absolute():
             folder_path = folder_path.absolute()
         self.root = folder_path
-        self.__configuration = Configuration.from_json(folder_path/"configuration.json",model)
+        self.__configuration = Configuration.from_json(folder_path/"configuration.json",model.__class__.__name__)
     @property
     def checkpoints(self) -> list[Path]:
         ckpt_folder = self.root/"checkpoints"

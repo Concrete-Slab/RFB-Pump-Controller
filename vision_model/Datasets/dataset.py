@@ -1,12 +1,13 @@
 from abc import ABC , abstractmethod
 import copy
-import csv
 import os
+from typing import Generic, TypeVar
 import warnings
 from PIL import Image
 import numpy as np
 from pathlib import Path
-import albumentations as A
+from vision_model.ImageTransforms import Transform, Compose, PadToSize, Crop
+from vision_model.GLOBALS import get_bbox, to_torch, normalise, BBOX_FORMAT, BboxFormatException, Rect
 import torch
 from torch.utils.data import Dataset
 import cv2
@@ -20,12 +21,9 @@ import json
 import imagesize
 
 
-Rect = tuple[int,int,int,int]
-
 ORIGINAL_DIR = Path(__file__).absolute().parent
 ORIGINAL_IMAGES = ORIGINAL_DIR / "Images"
 
-BBOX_FORMAT = "pascal_voc"
 
 @dataclass
 class DatasetPath:
@@ -206,24 +204,6 @@ def get_bbox_shape(r: Rect, img_path: Path,fmt: str=BBOX_FORMAT):
             raise NotImplementedError(errstr)
     return (height,width)
 
-def get_bbox(img: np.ndarray,fmt: str=BBOX_FORMAT) -> Rect:
-    nrows = img.shape[0]
-    ncols = img.shape[1]
-    rows = np.any(img>0, axis=1)
-    cols = np.any(img>0, axis=0)
-    rmin, rmax = np.where(rows)[0][[0, -1]]
-    cmin, cmax = np.where(cols)[0][[0, -1]]
-    # calculate median height
-    
-    match fmt:
-        case "coco":
-            return int(cmin), int(rmin), int(cmax-cmin), int(rmax-rmin)
-        case "pascal_voc":
-            return int(cmin),int(rmin),int(cmax),int(rmax)
-        case "albumentations":
-            return int(cmin)/ncols,int(rmin)/nrows,int(cmax)/ncols,int(rmax)/nrows
-        case _:
-            raise BboxFormatException(fmt)
 
 def _get_crop_params(bbox: Rect, img: np.ndarray, fmt: str=BBOX_FORMAT) -> dict[str,int]:
     if fmt == "augmentations":
@@ -239,10 +219,9 @@ def _get_crop_params(bbox: Rect, img: np.ndarray, fmt: str=BBOX_FORMAT) -> dict[
         case _:
             raise BboxFormatException(fmt)
 
-class BboxFormatException(NotImplementedError):
-    def __init__(self, fmt: str) -> None:
-        str_out = f"Unknown bbox format: {fmt}"
-        super().__init__(str_out)
+def _coco_to_pascal_voc(bbox_in: Rect):
+     (bbox_in[0],bbox_in[1],bbox_in[0]+bbox_in[2],bbox_in[1]+bbox_in[3])
+
 
 class SubImage:
     def __init__(self, img: np.ndarray, outer_box: tuple[int,int,int,int], inner_box: tuple[int,int,int,int]):
@@ -440,29 +419,6 @@ class DatasetHandler:
             labels[i] = ann["category_id"]
         return AnnotatedImage(img["file_name"], mask_names=mask_names, bboxes=bboxes, labels=labels)
 
-def transform_one(subimg: SubImage,transform: A.BasicTransform|None) -> tuple[np.ndarray, np.ndarray, Rect]:
-    if transform is None:
-        img_resized = subimg.image
-        mask_resized = subimg.mask
-    else:
-        augs = transform(image=subimg.image,mask=subimg.mask)
-        img_resized = augs["image"]
-        mask_resized = augs["mask"]
-    img_resized = img_resized.astype(np.uint8)
-    mask_resized = mask_resized.astype(np.uint8)
-    new_bbox = get_bbox(mask_resized)
-    return img_resized,mask_resized,new_bbox
-
-def save_one(subimg: SubImage, transform: A.BasicTransform, new_path: Path, filename: str, id: int, extension = ".png"):
-    img,mask,bbox = transform_one(subimg,transform)
-    fn = filename.rstrip(extension)
-    img_name = fn+f"_section{id}"+extension
-    mask_name = "mask"+img_name.lstrip("img")
-    with open(new_path/"labelled_images.csv","a+",newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([img_name,mask_name,*list(map(str,bbox))])
-    Image.fromarray(img,mode="RGBA").save(new_path/"Images"/img_name)
-    Image.fromarray(mask).save(new_path/"Masks"/mask_name)
 
 def copy_images(initial_directory: Path, target_directory: Path, extension: str):
     suffix_index = -1*len(extension)
@@ -474,15 +430,21 @@ def copy_images(initial_directory: Path, target_directory: Path, extension: str)
         dstpath = (target_directory/file).as_posix()
         shutil.copy2(initpath,dstpath)
 
-class BasicDataset(Dataset,ABC):
+A = TypeVar("A")
+
+class BasicDataset(Dataset,ABC,Generic[A]):
 
     def __len__(self):
         return len(self.annotated_images)
+    
+    @abstractmethod
+    def __getitem__(self, index: int) -> tuple[torch.Tensor,A]:
+        pass
 
     def __init__(
             self,
             rootpath: Path|str, 
-            transform: list[A.BasicTransform]|A.BasicTransform|None = None, 
+            transform: list[Transform]|Transform|None = None, 
             ensure_factor: int|None = None, 
             alpha_channel:bool = False, 
             img_dir: Path|str|None = None,
@@ -514,49 +476,49 @@ class BasicDataset(Dataset,ABC):
             min_shape[1] = min(min_shape[1],sz[1])
         min_shape = tuple(min_shape)
 
-        if isinstance(transform,A.BasicTransform):
+        if isinstance(transform,Transform):
             transform = [transform]
         elif transform is None:
             transform = []
 
-        self.bbox_params = A.BboxParams(bbox_format,label_fields=["label_ids"]) if bbox_format is not None else None
+        # self.bbox_params = A.BboxParams(bbox_format,label_fields=["label_ids"]) if bbox_format is not None else None
         
         if ensure_factor is not None:
             pad_width = math.ceil(min_shape[1]/ensure_factor) * ensure_factor
             pad_height = math.ceil(min_shape[0]/ensure_factor) * ensure_factor
-            self.transform = A.Compose(
-                [
-                    *transform,
-                    A.PadIfNeeded(min_height=pad_height,min_width=pad_width,border_mode=cv2.BORDER_CONSTANT,value=0,mask_value=0),
-                    A.Crop(x_max=pad_width,y_max=pad_height),
-                ],
-                bbox_params=self.bbox_params
+            self.transform = Compose(
+                *transform,
+                PadToSize(min_height=pad_height,min_width=pad_width,border_mode=cv2.BORDER_CONSTANT,border_value=0,mask_value=0),
+                Crop(x_max=pad_width,y_max=pad_height),
             )
             self.image_shape = (pad_height,pad_width)
         else:
-            self.transform = A.Compose(
-                [
-                    *transform,
-                    A.Crop(x_max=min_shape[1],y_max=min_shape[0])
-                ],
-                bbox_params=self.bbox_params
+            self.transform = Compose(
+                *transform,
+                Crop(x_max=min_shape[1],y_max=min_shape[0])
             )
             self.image_shape = min_shape
 
-    def apply_transforms(self,outer_bbox: Rect|None,**kwargs):
-        augmentations = self.transform(**kwargs)
-        kwargs = {key:augmentations[key] for key in kwargs.keys()}
+    def apply_transforms(self,image: np.ndarray, outer_bbox: Rect|None, mask: np.ndarray|None = None, bboxes: list[Rect]|None = None, masks: list[np.ndarray]|None=None):
+        # first apply the transformations
+        aug = self.transform(image,mask=mask,bboxes=bboxes,masks=masks)
+        # now we need to crop to fit the outer bbox to obtain the final image
         if outer_bbox:
-            crop_params = _get_crop_params(outer_bbox,kwargs["image"])
-            cropper = A.Compose([A.Crop(**crop_params)],bbox_params=self.bbox_params)
-            crops = cropper(**kwargs)
-            kwargs = {key:crops[key]for key in kwargs.keys()}
-        return kwargs
+            # first get the kwargs to feed into the crop transformation (basically, do we need to also crop bboxes and a mask?)
+            kwargs = {"mask":aug.mask if mask is not None else None, "bboxes":aug.bboxes if bboxes is not None else None, "masks":aug.masks if masks is not None else None}
+            
+            # get the crop parameters and create the crop object
+            crop_params = _get_crop_params(outer_bbox,aug.image)
+            cropper = Crop(**crop_params)
+            
+            # perform the cropping
+            aug = cropper(aug.image,**kwargs)
+        return aug
 
     @classmethod
     @abstractmethod
-    def visualise_target(cls,input: torch.Tensor, output: dict[str,torch.Tensor]|torch.Tensor, **kwargs) -> np.ndarray:
-        raise NotImplementedError("_visualise_target is not implemented")
+    def visualise_target(cls,input: torch.Tensor, output: A, **kwargs) -> np.ndarray:
+        raise NotImplementedError("visualise_target is not implemented")
     def view(self,**kwargs):
         mi = ImageScroller(auto_progress=True)
         window = self.__class__.__name__ + " Viewer"
@@ -567,10 +529,10 @@ class BasicDataset(Dataset,ABC):
         with open_cv2_window(window):
             MouseInput.iterate(loopfun,range(0,len(self)))
 
-class MaskDataset(BasicDataset):
-    def __init__(self, rootpath: Path, transform: A.BasicTransform | None = None, ensure_factor: int | None = None, alpha_channel: bool = False, img_dir: Path | str | None = None, require_shape: tuple[int,int]|None = None) -> None:
+class MaskDataset(BasicDataset[torch.Tensor]):
+    def __init__(self, rootpath: Path, transform: Transform | None = None, ensure_factor: int | None = None, alpha_channel: bool = False, img_dir: Path | str | None = None, require_shape: tuple[int,int]|None = None) -> None:
         super().__init__(rootpath, transform, ensure_factor, alpha_channel, img_dir, require_masks=True, shape=require_shape)  
-    def __getitem__(self, index: int) -> tuple[torch.Tensor,torch.Tensor]:
+    def __getitem__(self, index: int):
         annotation = self.annotated_images[index]
         img_name = annotation.img_name
         image = np.array(Image.open(self.img_dir/img_name),dtype=np.uint8)
@@ -585,12 +547,11 @@ class MaskDataset(BasicDataset):
         if len(mask.shape)==3:
             mask = cv2.cvtColor(mask,cv2.COLOR_RGB2GRAY)
 
-        augmentations = self.apply_transforms(annotation.outer_bbox,image=image,mask=mask)
-        image = augmentations["image"]
-        mask = augmentations["mask"]
 
-        image = to_torch(normalise(image))
-        mask = to_torch(mask)
+        augmentations = self.apply_transforms(image,annotation.outer_bbox,mask=mask)
+
+        image = to_torch(normalise(augmentations.image))
+        mask = to_torch(augmentations.mask)
         return image,mask
     def _combine_masks(self, mask_names: list[str]) -> np.ndarray:
         mask = np.array(Image.open(self.mask_dir/mask_names[0]),dtype=np.uint8)
@@ -621,11 +582,11 @@ class MaskDataset(BasicDataset):
         image_with_transparency[idx] = alpha*blend_mask[idx] + (1-alpha)*img[idx]
         bbox = get_bbox(mask,"coco")
         cv2.rectangle(image_with_transparency,bbox,(0,0,1),thickness=1)
-        # image_with_transparency = cv2.cvtColor(image_with_transparency,cv2.COLOR_RGB2BGR)
+        image_with_transparency = cv2.cvtColor(image_with_transparency,cv2.COLOR_RGB2BGR)
         return image_with_transparency
 
-class BoxDataset(BasicDataset):
-    def __init__(self, rootpath: Path, transform: A.BasicTransform | None = None, ensure_factor: int | None = None, alpha_channel: bool = False, img_dir: Path | str | None = None, require_shape: tuple[int,int]|None = None) -> None:
+class BoxDataset(BasicDataset[torch.Tensor]):
+    def __init__(self, rootpath: Path, transform: Transform | None = None, ensure_factor: int | None = None, alpha_channel: bool = False, img_dir: Path | str | None = None, require_shape: tuple[int,int]|None = None) -> None:
         super().__init__(rootpath, transform, ensure_factor, alpha_channel, img_dir, require_bboxes=True,bbox_format=BBOX_FORMAT, shape=require_shape)
     def __getitem__(self, index: int) -> tuple[torch.Tensor,torch.Tensor]:
         annotations = self.annotated_images[index]
@@ -638,19 +599,18 @@ class BoxDataset(BasicDataset):
         if labels is None or len(labels) != len(bboxes):
             labels = [1]*len(bboxes)
 
-        augmentations = self.apply_transforms(annotations.outer_bbox,image=image,bboxes=bboxes,labels=labels)
-        bboxes = augmentations["bboxes"]
-        image = augmentations["image"]
-        labels = augmentations["labels"]
+        augmentations = self.apply_transforms(image,annotations.outer_bbox,bboxes=bboxes)
+        bboxes = augmentations.bboxes
+        image = augmentations.image
 
         image = to_torch(normalise(image))
         bbox = torch.Tensor(bbox).float()
         return image,bbox
 
-class MaskRCNNDataset(BasicDataset):
-    def __init__(self, rootpath: Path | str, transform: A.BasicTransform | None = None, ensure_factor: int | None = None, alpha_channel: bool = False, img_dir: Path | str | None = None, require_shape: tuple[int,int]|None = None) -> None:
+class MaskRCNNDataset(BasicDataset[dict[str,torch.Tensor]]):
+    def __init__(self, rootpath: Path | str, transform: Transform | None = None, ensure_factor: int | None = None, alpha_channel: bool = False, img_dir: Path | str | None = None, require_shape: tuple[int,int]|None = None) -> None:
         super().__init__(rootpath, transform, ensure_factor, alpha_channel, img_dir, require_masks=True, require_bboxes=True, require_ids=True, bbox_format=BBOX_FORMAT, shape=require_shape)
-    def __getitem__(self, index: int) -> tuple[torch.Tensor,dict[str,torch.Tensor]]:
+    def __getitem__(self, index: int):
         annotation = self.annotated_images[index]
         img_name = annotation.img_name
         image = np.array(Image.open(self.img_dir/img_name),dtype=np.uint8)
@@ -664,6 +624,10 @@ class MaskRCNNDataset(BasicDataset):
         bboxes = annotation.bboxes
         if bboxes is None or len(bboxes)<1:
             raise Exception("BBoxes are None or empty")
+        
+        for bb in bboxes:
+            bb = _coco_to_pascal_voc(bb)
+
         labels = annotation.labels
         if labels is None or len(labels)<1:
             raise Exception("Labels is None or Empty")
@@ -676,16 +640,15 @@ class MaskRCNNDataset(BasicDataset):
             masks.append(next_mask)
 
         bboxes = list(map(list,bboxes))
-        augmentations = self.apply_transforms(annotation.outer_bbox,image=image,masks=masks,bboxes=bboxes,label_ids=labels)
-        image = augmentations["image"]
-        masks = augmentations["masks"]
-        bboxes = augmentations["bboxes"]
-        labels = augmentations["label_ids"]
+        augmentations = self.apply_transforms(image,annotation.outer_bbox,masks=masks,bboxes=bboxes)
 
-        image = to_torch(normalise(image))
-        masks = list(map(to_torch,masks))
+        # augmentations = self.apply_transforms(image,None,masks=masks,bboxes=bboxes)
+
+
+        image = to_torch(normalise(augmentations.image))
+        masks = list(map(to_torch,augmentations.masks))
         masks = torch.stack(masks)
-        bboxes = torch.Tensor(bboxes)
+        bboxes = torch.Tensor(augmentations.bboxes)
         labels = torch.Tensor(labels)
         dict_out = {"masks":masks,"bboxes":bboxes,"labels":labels}
         return image,dict_out
@@ -697,7 +660,7 @@ class MaskRCNNDataset(BasicDataset):
                 yield my_list[start_at]
                 start_at = (start_at + 1) % len(my_list)
         
-        img = np.array(img)
+        img: np.ndarray = np.array(img)
         img = np.transpose(img,[1,2,0])
         img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
         masks = targets["masks"]
@@ -727,31 +690,17 @@ class MaskRCNNDataset(BasicDataset):
         image_with_transparency[idx] = alpha*big_mask[idx] + (1-alpha)*img[idx]
         return image_with_transparency
 
-def to_torch(npimg: np.ndarray) -> torch.Tensor:
-    # add a channel dimension to image if it doesnt exist
-    if len(npimg.shape) == 2:
-        npimg = np.expand_dims(npimg,2)
-    # torch uses CHW format, image supplied from PIL is in HWC format
-    npimg = npimg.transpose(2,0,1)
-    # convert numpy array to torch tensor
-    return torch.from_numpy(npimg).float()
-
-def normalise(img: np.ndarray, max_pixel_value=255) -> np.ndarray:
-    # Reduce image range to [0,1]
-    img = img / max_pixel_value
-    # # Normalise the image
-    # mean = np.mean(img)
-    # std = np.std(img)
-    # img = (img-mean)/std
-    # # image now has 0.5 mean and range [0,1]
-    return img
+def main():
+    print("Done labelling, displaying results")
+    ds = MaskDataset("320x320")
+    ds.view()
 
 if __name__ == "__main__":
 
     # dh = DatasetHandler()
     # dh.add_outer_boxes("fluid_polygons.json",(320,320),"320x320")
     print("Done labelling, displaying results")
-    ds = MaskRCNNDataset("320x320")
+    ds = MaskDataset("320x320")
     ds.view()
     # files = [file for file in os.listdir(ORIGINAL_IMAGES) if file[-4:]==".png"]
     # with open(ORIGINAL_DIR/"labelled_images.csv","r",newline="") as f:

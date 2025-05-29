@@ -1,9 +1,9 @@
+from enum import Enum, StrEnum
 from pathlib import Path
 from dataclasses import dataclass, asdict
 import json
 from typing import Any, Iterable
-from lightning.pytorch.callbacks import *
-from torch.nn import Module
+import numpy as np
 import torch.optim.lr_scheduler
 import inspect
 import os
@@ -11,6 +11,10 @@ import os
 LOG_DIR = Path(__file__).absolute().parent / "logs"
 DATASET_DIR = Path(__file__).absolute().parent / "Datasets" / "Dataset_ORIGINAL"
 ROOT_DIRECTORY = Path(__file__).absolute().parent / "Datasets"
+
+class LogStage(StrEnum):
+    STEP = "step"
+    EPOCH = "epoch"
 
 @dataclass
 class Configuration:
@@ -32,12 +36,12 @@ class Configuration:
     precision:str = "highest"
     lr_name: str|None = None
     lr_args: str|None = None
-    training_callbacks: list[Callback]|None = None
+    training_mixins: dict[str,dict[str,Any]]|None = None
     shuffle_dataset: bool = True
     experiment_name: str = "Experiment 0"
 
     @staticmethod
-    def from_json(jsonpath: Path|str, model: Module, root_directory: Path=ROOT_DIRECTORY):
+    def from_json(jsonpath: Path|str, model_name: str="segmentation_model", root_directory: Path=ROOT_DIRECTORY):
         with open(jsonpath,"r") as jf:
             json_obj = json.load(jf)
         
@@ -55,14 +59,8 @@ class Configuration:
             json_obj["dataset"] = dataset_directory
             
             if "experiment_name" not in json_obj.keys():
-                experiment_name = model.__class__.__name__ + "-" + ds_name
+                experiment_name = model_name + "-" + ds_name
                 json_obj["experiment_name"] = experiment_name
-
-        if "callbacks" in json_obj.keys():
-            callbacks_dict = dict(json_obj.pop("callbacks"))
-            json_obj["training_callbacks"] = _extract_callbacks(callbacks_dict,experiment_name)
-        else:
-            json_obj["training_callbacks"] = []
 
         # _check_missing_args(json_obj.keys())
         _check_extra_args(json_obj.keys())
@@ -93,12 +91,12 @@ class Configuration:
                 "lr_scheduler": None
             }
         # handle callbacks
-        cbs = out.pop("training_callbacks")
+        cbs = out.pop("training_mixins")
         cb_dict = {}
         if cbs is None or len(cbs) == 0:
             out = {
                 **out,
-                "callbacks": None
+                "training_mixins": None
             }
         else:
             for cb in cbs:
@@ -111,22 +109,6 @@ class Configuration:
                 "callbacks": cb_dict
             }
         return out
-
-
-def _extract_callbacks(callbacks: dict[str,Any]|None,experiment_name: str) -> list[Callback]:
-    cb_list = []
-    if callbacks is None:
-        return cb_list
-    for cb_name, arg_dict in callbacks.items():
-        if "monitor" in arg_dict:
-            metric = Metrics.from_name(arg_dict["monitor"])
-            arg_dict = {**arg_dict,"mode":metric.mode}
-        if cb_name == "ModelCheckpoint":
-            filename = experiment_name + "-{epoch:02d}-{" + arg_dict["monitor"] + ":.2e}"
-            arg_dict = {**arg_dict,"filename":filename}
-        cb = globals()[cb_name](**arg_dict)
-        cb_list.append(cb)
-    return cb_list
 
 def _extract_lr_scheduler(initial_config: dict[str,Any]|None) -> tuple[str|None,dict[str,Any]|None]:
     if initial_config is None:
@@ -142,17 +124,6 @@ def _extract_lr_scheduler(initial_config: dict[str,Any]|None) -> tuple[str|None,
         raise ConfigurationException("lr_scheduler class ReduceLROnPlateau requires the \"monitor\" argument (string name from Metrics options)")
     return name, args
 
-def _check_missing_args(keys: Iterable[str]):
-    members = inspect.getmembers(Configuration)
-    fields = list(list(filter(lambda x: x[0] == '__dataclass_fields__', members))[0][1].values())
-    missing_keys = []
-    for field in fields:
-        field_name = field.name
-        if field_name not in keys:
-            missing_keys.append(field_name)
-    if len(missing_keys)>0:
-        raise ConfigurationException("Configuration file is missing the following keys: " + ", ".join(missing_keys))
-
 def _check_extra_args(keys: Iterable[str]):
     members = inspect.getmembers(Configuration)
     fields = list(list(filter(lambda x: x[0] == '__dataclass_fields__', members))[0][1].values())
@@ -164,73 +135,98 @@ def _check_extra_args(keys: Iterable[str]):
 class ConfigurationException(Exception):
     pass
 
+
+
 @dataclass
 class BaseMetric:
     name: str
     mode: str
 
-class Metrics:
+class Metrics(Enum):
     train_loss = BaseMetric("train_loss","min")
     val_loss = BaseMetric("val_loss","min")
+    test_loss = BaseMetric("test_loss","min")
     mean_train_loss = BaseMetric("mean_train_loss","min")
     mean_val_loss = BaseMetric("mean_val_loss","min")
     mean_test_loss = BaseMetric("mean_test_loss","min")
     val_accuracy = BaseMetric("val_accuracy","max")
-    val_iou = BaseMetric("val_iou","max")
     test_accuracy = BaseMetric("test_accuracy","max")
+    val_iou = BaseMetric("val_iou","max")
     test_iou = BaseMetric("test_iou","max")
-    test_loss = BaseMetric("test_loss","min")
     
     @classmethod
     def from_name(cls,name: str) -> BaseMetric:
-        for p in dir(Metrics):
-            try:
-                p_obj = getattr(Metrics,p)
-                if isinstance(p_obj,BaseMetric) and p_obj.name == name:
-                    return p_obj
-            except AttributeError:
-                continue
+        for p in cls:
+            if isinstance(p,BaseMetric) and p.name == name:
+                return p
         raise MetricException(f"{name} is not a recognised metric name")
-
+    
+    @property
+    def mode(self):
+        return self.value.mode
+    @property
+    def name(self):
+        return self.value.name
+    
 class MetricException(Exception):
     pass
 
 
-class LogFolder:
-    def __init__(self,folder_path: Path,model: torch.nn.Module) -> None:
-        if not folder_path.is_absolute():
-            folder_path = folder_path.absolute()
-        self.root = folder_path
-        self.model = model
-        self.__configuration = Configuration.from_json(folder_path/"configuration.json",model)
-    @property
-    def checkpoints(self) -> list[Path]:
-        ckpt_folder = self.root/"checkpoints"
-        ckpts = [ckpt_folder/filename for filename in os.listdir(ckpt_folder) if os.path.isfile(ckpt_folder/filename) and filename[-5:] == ".ckpt"]
-        return ckpts
-    @property
-    def hparams(self) -> Path:
-        return self.root/"hparams.yaml"
-    @property
-    def configuration(self) -> Configuration:
-        return self.__configuration
+# general image manipulation methods
 
-    def save_pytorch_checkpoint(self, optimiser: torch.optim.Optimizer = None, filename="torch_checkpoint.pth.tar", custom_message=None):
-        state = {"state_dict": self.model.state_dict()}
-        if optimiser:
-            state = {**state, "optimizer":optimiser.state_dict()}
-        print("=> Saving checkpoint" if custom_message is None else custom_message)
-        torch.save(state, self.root/filename)
+def to_torch(npimg: np.ndarray, device: str|None = None) -> torch.Tensor:
+    # add a channel dimension to image if it doesnt exist
+    if len(npimg.shape) == 2:
+        npimg = np.expand_dims(npimg,2)
+    # torch uses CHW format, image supplied from PIL is in HWC format
+    npimg = npimg.transpose(2,0,1)
+    # convert numpy array to torch tensor
+    if device is None:
+        return torch.from_numpy(npimg).float()
+    return torch.from_numpy(npimg).float().to(device=device)
+
+def normalise(img: np.ndarray, max_pixel_value=255) -> np.ndarray:
+    # Reduce image range to [0,1]
+    img = img / max_pixel_value
+    # # Normalise the image
+    # mean = np.mean(img)
+    # std = np.std(img)
+    # img = (img-mean)/std
+    # # image now has 0.5 mean and range [0,1]
+    return img
+
+BBOX_FORMAT = "pascal_voc"
+Rect = tuple[int,int,int,int]
+class BboxFormatException(NotImplementedError):
+    def __init__(self, fmt: str) -> None:
+        str_out = f"Unknown bbox format: {fmt}"
+        super().__init__(str_out)
+
+def get_bbox(img: np.ndarray,fmt: str=BBOX_FORMAT) -> Rect:
+    nrows = img.shape[0]
+    ncols = img.shape[1]
+    rows = np.any(img>0, axis=1)
+    cols = np.any(img>0, axis=0)
+    try:
+        rmin, rmax = np.where(rows)[0][[0, -1]]
+        cmin, cmax = np.where(cols)[0][[0, -1]]
+    except IndexError:
+        # mask doesnt exist or is too thin
+        rmin, rmax, cmin, cmax = (0,0,0,0)
+    # calculate median height
     
-    def load_pytorch_checkpoint(self, optimiser: torch.optim.Optimizer = None, filename="torch_checkpoint.pth.tar", custom_message=None):
-        print("=> Loading checkpoint" if custom_message is None else custom_message)
-        checkpoint = torch.load(filename)
-        self.model.load_state_dict(checkpoint["state_dict"])
-        if optimiser and "optimiser" in checkpoint.keys():
-            optimiser.load_state_dict(checkpoint["optimiser"])
+    match fmt:
+        case "coco":
+            return int(cmin), int(rmin), int(cmax-cmin), int(rmax-rmin)
+        case "pascal_voc":
+            return int(cmin),int(rmin),int(cmax),int(rmax)
+        case "albumentations":
+            return int(cmin)/ncols,int(rmin)/nrows,int(cmax)/ncols,int(rmax)/nrows
+        case _:
+            raise BboxFormatException(fmt)
 
 if __name__ == "__main__":
     m = torch.nn.Linear(1,1)
-    c = Configuration.from_json("configuration.json",m)
+    c = Configuration.from_json("configuration.json",m.__class__.__name__)
     j = c.generate_json()
     print(j)
