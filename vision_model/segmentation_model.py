@@ -6,6 +6,7 @@ import numpy as np
 import torch
 from torch.optim import Optimizer
 from vision_model.GLOBALS import Metrics, Configuration, LogStage
+from vision_model.common_functions import reduce_mask
 import torch.nn as nn
 import torch.optim.lr_scheduler as lrs
 import segmentation_models_pytorch as smp
@@ -280,55 +281,8 @@ class SegmentationModule(GenericModule):
             batch_size = x.shape[0]
             lst_x = [torch.zeros_like(x[0])]*batch_size
             for i in range(0,len(lst_x)):
-                lst_x[i] = _reduce_mask(x[i])
+                lst_x[i] = reduce_mask(x[i])
             return torch.stack(lst_x)
-
-
-def _reduce_mask(prediction: torch.Tensor, kernel_size=(10,10)):
-    # generate predictions from logits
-    prediction = torch.sigmoid(prediction).detach()
-    threshold = torch.Tensor([0.5]).to(prediction.device).detach()
-    original_device = prediction.device
-    prediction = (prediction>=threshold).float().cpu()
-    original_size = len(prediction.shape)
-    # convert to numpy array
-    while len(prediction.shape)>3:
-        prediction = prediction.squeeze()
-    while len(prediction.shape)<3:
-        prediction = prediction.unsqueeze(0)
-    mask = np.array(prediction)
-    mask = np.transpose(mask,[1,2,0])
-    # morph close to remove smaller blobs more efficiently
-    kernel = np.ones(kernel_size)*255
-    thresh = cv2.morphologyEx(mask,cv2.MORPH_OPEN,kernel)*255
-    thresh = thresh.astype(np.uint8)
-    # find the contours around all remaining activations
-    contours = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contours = contours[0] if len(contours) == 2 else contours[1]
-    # select the contour with the maximum area
-    if len(contours)>0:
-        max_contour = max(contours,key=cv2.contourArea)
-        mask_out = np.zeros_like(mask,dtype=np.uint8)
-        cv2.drawContours(mask_out,[max_contour],-1,255,thickness=cv2.FILLED)
-        mask_out = mask_out.transpose(2,0,1)
-    else:
-        mask_out = thresh[:,:,np.newaxis]
-    mask_tensor = torch.from_numpy((mask_out/255).astype(np.float32)).float().cpu()
-
-    while len(mask_tensor.shape)<original_size:
-        mask_tensor = mask_tensor.unsqueeze(0)
-    while len(mask_tensor.shape)>original_size:
-        mask_tensor = mask_tensor.squeeze()
-    mask_tensor = mask_tensor.to(original_device)
-    one = torch.Tensor([1]).to(original_device).detach()
-    mask_tensor = torch.log(mask_tensor/(one-mask_tensor))
-    return mask_tensor
-
-def _get_bsize(x: torch.Tensor) -> int:
-    if len(x.shape) == 4:
-        return x.shape[0]
-    else:
-        return 1
 
 class BBoxModule(GenericModule):
     pass

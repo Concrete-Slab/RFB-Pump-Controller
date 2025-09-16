@@ -7,7 +7,7 @@ from PIL import Image
 import numpy as np
 from pathlib import Path
 from vision_model.ImageTransforms import Transform, Compose, PadToSize, Crop
-from vision_model.GLOBALS import get_bbox, to_torch, normalise, BBOX_FORMAT, BboxFormatException, Rect
+from vision_model.common_functions import get_bbox, to_torch, normalise, BBOX_FORMAT, BboxFormatException, Rect
 import torch
 from torch.utils.data import Dataset
 import cv2

@@ -2,8 +2,7 @@ import torch
 from numpy import ndarray
 import segmentation_models_pytorch as smp
 from vision_model.level_filters import LevelFilter
-from vision_model.segmentation_model import SegmentationModule
-from vision_model.GLOBALS import to_torch,normalise,get_bbox
+from vision_model.common_functions import to_torch, normalise, get_bbox, reduce_mask_numpy
 import numpy as np
 from pathlib import Path
 import copy
@@ -12,38 +11,28 @@ class _SegmentationFilter(LevelFilter):
 
     filter_size = (320,320)
 
-    threshold = torch.Tensor([0.5]).detach()
-
     def __init__(self,ckpt_path: Path, base_model: torch.nn.Module, ignore_level=False, use_cuda = True):
         super().__init__(ignore_level)
-        self.module = None
         self.ckpt_path = ckpt_path
         self.base_model = base_model
         self.device = 'cuda' if torch.cuda.is_available() and use_cuda else 'cpu'
 
     def setup(self):
-        self.module = SegmentationModule.load_from_checkpoint(self.ckpt_path,self.base_model,self.device)
-        self.threshold = self.threshold.to(self.device)
-        self.module.eval()
+        # load state dict from checkpoint
+        map_location = {"cuda:0":"cpu"} if self.device == "cpu" else None
+        checkpoint = torch.load(self.ckpt_path,map_location=map_location)
+        self.base_model.load_state_dict(checkpoint["state_dict"])
+        self.base_model.eval()
+        self.base_model = self.base_model.to(self.device)
 
     @torch.no_grad
     def filter(self, img: ndarray, scale: float) -> tuple[ndarray, float]:
-        timg = to_torch(normalise(copy.copy(img)),device=self.device)
+        timg = to_torch(normalise(copy.copy(img)),device=self.device) # convert img to tensor and send to gpu/cpu
         timg = timg.unsqueeze(0)
-        prediction = self.module.forward(timg)
-        prediction = torch.sigmoid(prediction).detach()
-        prediction = (prediction>=self.threshold).float().detach()
-        timg = timg.squeeze().cpu()
-        prediction = prediction.squeeze().cpu()
 
-        while len(prediction.shape)<3:
-            prediction = prediction.unsqueeze(0)
-
-        img = np.array(timg)
-        mask = np.array(prediction)
-        mask = np.transpose(mask,[1,2,0])
-        img = np.transpose(img,[1,2,0])
-        
+        prediction = self.base_model.forward(timg) # perform CNN segmentation
+        mask = reduce_mask_numpy(prediction) # perform cv2 enhancements on segmentation, returns in 1-channel normalised cv2 format
+        img = np.array(timg.cpu()).transpose(1,2,0) # get img as 3-channel normalised array in cv2 format
         if all(mask.flatten()<=0): # mask has no detections of fluid
             return img,0.0
         bbox = _median_box(mask,fmt="coco")
